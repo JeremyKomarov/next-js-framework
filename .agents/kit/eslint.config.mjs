@@ -15,7 +15,7 @@ import nextTypescript from "eslint-config-next/typescript";
 const here = dirname(fileURLToPath(import.meta.url));
 
 // Read from disk so adding a feature never means editing this file. Paths below are
-// relative to this config, which sits at the root — the app itself lives under src/ (§01 §1).
+// relative to this config, which sits at the root — the app itself lives under src/ (01 §1).
 const FEATURES = existsSync(join(here, "src/features"))
   ? readdirSync(join(here, "src/features"), { withFileTypes: true })
       .filter((e) => e.isDirectory())
@@ -48,7 +48,7 @@ const NO_SERVER = {
 };
 
 // NO_SERVER already covers server/db/ for the browser layers, so this is the narrower rule the
-// other half of §4 needs: even code that MAY reach the server imports a repo function, never the
+// other half of 01 §8 needs: even code that MAY reach the server imports a repo function, never the
 // client itself. Only server/db/ is exempt.
 const NO_DB_CLIENT = {
   group: ["@/server/db/client", "@/server/db/client.*"],

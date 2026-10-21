@@ -197,7 +197,9 @@ The framework specifies the **groups**; the template's values are the default, m
 
 The file ends with the reset, base element rules, and a `prefers-reduced-motion` block.
 
-**No hardcoded colour outside `tokens.scss`** — `npm run guard` fails on any hex found elsewhere.
+**No hardcoded colour outside `tokens.scss`** — `npm run guard` fails on any found elsewhere: a
+hex, a colour function such as `rgb()` or `oklch()` (unless it wraps a `var()`), or a named colour
+like `white` as a colour property's value. `transparent` and `currentColor` are not literals.
 Semantic colours carry meaning and are never decorative alternatives to the brand ramp.
 
 **BEM inside the module:** one block per component, elements `__`, modifiers `--`. Modules already

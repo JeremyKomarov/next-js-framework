@@ -33,8 +33,17 @@ const say = (s = "") => console.log(s);
 const step = (s) => say(`  ${c.green}✓${c.off} ${s}`);
 const die = (s) => { console.error(`\n  ${c.red}✗${c.off} ${s}\n`); process.exit(1); };
 
-// Everything the framework owns, plus the root files tool conventions pin in place.
-const TEMPLATE_FILES = [".agents", "AGENTS.md", "CLAUDE.md", ".claude/settings.json", "docs", "plan", ".gitattributes"];
+// Everything the framework owns, plus the root files tool conventions pin in place. The root
+// AGENTS.md is not here: the template's own is the guide for working on the framework, and a
+// project's comes from .agents/templates/root-guide.md (DECISIONS.md #29).
+const TEMPLATE_FILES = [".agents", "CLAUDE.md", ".claude/settings.json", "docs", "plan", ".gitattributes"];
+const ROOT_GUIDE = ".agents/templates/root-guide.md";
+// The project's CI, written to .github/workflows/. The template's own workflow tests the framework
+// and runs this script, so a project must never inherit it (DECISIONS.md #28).
+const CI_WORKFLOW = ".agents/kit/ci/verify.yml";
+// Files that belong to the template repository alone. Never copied into a new directory; removed
+// when scaffolding in place.
+const TEMPLATE_ONLY = [".prettierignore"];
 
 const SCRIPTS = {
   dev: "next dev",
@@ -55,15 +64,19 @@ const SCRIPTS = {
 
 // A tested combination, not the latest of each — .agents/docs/05-WORKFLOW.md §3 says why
 // TypeScript stays on 6 and ESLint on 9.
+//
+// create-next-app is pinned to the same Next version, not @latest: it writes the files this
+// script then rewrites, so an unpinned one changes what a scaffold contains with no commit here.
+const NEXT = "16.3.4";
 const DEPS = {
   "@hookform/resolvers": "^5.9.1", "@tanstack/react-query": "^5.102.8", "lucide-react": "^0.545.0",
-  next: "^16.3.4", "next-intl": "^4.14.2", react: "^19.2.8", "react-dom": "^19.2.8",
+  next: `^${NEXT}`, "next-intl": "^4.14.2", react: "^19.2.8", "react-dom": "^19.2.8",
   "react-hook-form": "^7.87.0", sass: "^1.104.0", "server-only": "0.0.1", zod: "^4.5.4",
   zustand: "^5.0.15",
 };
 const DEV_DEPS = {
   "@types/node": "^22.10.0", "@types/react": "^19.0.0", "@types/react-dom": "^19.0.0",
-  eslint: "^9.39.5", "eslint-config-next": "^16.3.4", typescript: "^6.0.3", vitest: "^5.0.0",
+  eslint: "^9.39.5", "eslint-config-next": `^${NEXT}`, typescript: "^6.0.3", vitest: "^5.0.0",
 };
 
 // ------------------------------------------------------------------------ ask
@@ -115,7 +128,7 @@ function scaffoldNext(root) {
   const staging = join(root, "next-app-tmp");   // not ".next-app": npm rejects a name starting with "."
   rmSync(staging, { recursive: true, force: true });
 
-  run("npx", ["--yes", "create-next-app@latest", "next-app-tmp", "--ts", "--src-dir", "--app",
+  run("npx", ["--yes", `create-next-app@${NEXT}`, "next-app-tmp", "--ts", "--src-dir", "--app",
               "--no-tailwind", "--no-eslint", "--import-alias", "@/*", "--use-npm",
               "--skip-install", "--no-turbopack", "--no-git"], root);
   if (!existsSync(join(staging, "package.json"))) die("create-next-app produced no package.json");
@@ -177,6 +190,9 @@ if (!inPlace) {
     cpSync(join(TEMPLATE, ".gitignore"), join(root, ".gitignore"));
   step(`framework copied into ${basename(root)}/`);
 }
+// Before create-next-app runs, which merges its own block into whatever AGENTS.md is here. In
+// place, this replaces the framework's working guide with the project's.
+cpSync(join(TEMPLATE, ROOT_GUIDE), join(root, "AGENTS.md"));
 
 // 2. the app
 scaffoldNext(root);
@@ -196,6 +212,12 @@ pkg.dependencies = sorted({ ...pkg.dependencies, ...DEPS });
 pkg.devDependencies = sorted({ ...pkg.devDependencies, ...DEV_DEPS });
 writeJson(join(root, "package.json"), pkg);
 step("kit installed — verify, guard, sync:agents, update:framework wired");
+
+// Without this a project's only gate is the one people run by hand. In place, it replaces the
+// template's own workflow, which would run this deleted script on the first push.
+mkdirSync(join(root, ".github/workflows"), { recursive: true });
+cpSync(join(root, CI_WORKFLOW), join(root, ".github/workflows/verify.yml"));
+step("CI written — .github/workflows/verify.yml runs npm run verify on every push");
 
 // 4. the app's entry files, framework-shaped
 //
@@ -383,9 +405,29 @@ Everything else — where files go, how to add an API call, what is already buil
 belong in a README twice.
 `);
 
+// A repository before the install, so `postinstall` has one to wire the pre-commit plan check
+// into — create-next-app runs with --no-git, and without this the hook was a manual step everyone
+// skipped. Not when the target already sits inside a repository: that one is the user's.
+const insideRepo = (() => {
+  try { execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, stdio: "ignore" }); return true; }
+  catch { return false; }
+})();
+if (!insideRepo) {
+  try {
+    execFileSync("git", ["init", "--quiet"], { cwd: root, stdio: "ignore" });
+    step("git repository initialised");
+  } catch {
+    say(`  ${c.dim}git is not available — skipped git init and the pre-commit hook${c.off}`);
+  }
+}
+// The hook is wired only into a repository rooted here — in place, the template clone's own.
+const ownRepo = existsSync(join(root, ".git"));
+
 if (!has("skip-install")) {
   say(`\n  ${c.dim}installing dependencies…${c.off}\n`);
-  run("npm", ["install"], root);
+  run("npm", ["install"], root);                    // postinstall wires the hook
+} else if (ownRepo) {
+  run(process.execPath, [join(root, ".agents/cli.mjs"), "hooks"], root);
 }
 
 // 9. the template's own scaffolding is not the project's. `new-project` stays: it is now a
@@ -397,13 +439,18 @@ if (!has("skip-install")) {
 // dangling citations the test exists to assert on. `update:framework` never copies it either.
 try { rmSync(join(root, "bin"), { recursive: true, force: true }); } catch { /* held open on Windows */ }
 rmSync(join(root, ".agents/cli.test.mjs"), { force: true });
+for (const f of TEMPLATE_ONLY) rmSync(join(root, f), { force: true });
+
+const next = [];
+if (!ownRepo)
+  next.push(`${c.bold}npm run hooks${c.off} once this is its own git repository — it wires the pre-commit plan check.`);
+next.push(`${c.bold}plan/01-foundation.md${c.off} is the one phase the framework prescribes. Mark 01.1 [~],\n` +
+          `       set the phase to "in progress" in the file and plan/00-INDEX.md, and write plan/NOW.md.`);
+next.push(`Read ${c.bold}AGENTS.md${c.off}. Then ${c.bold}node .agents/cli.mjs rule${c.off} — the rulebook,\n` +
+          `       one line per section. Fetch a section; never open the file.`);
+next.push(`${c.bold}npm run verify${c.off} before every PR. CI runs it on every push once you add a remote.`);
 
 say(`\n  ${c.green}Done.${c.off} ${c.dim}${inPlace ? "" : `cd ${basename(root)} && `}npm run dev${c.off}\n`);
 say(`  ${c.cyan}Next${c.off}`);
-say(`    1. ${c.bold}git init && npm run hooks${c.off} — there was no repo for the pre-commit plan`);
-say(`       check to wire itself into during install; this does it now that one exists.`);
-say(`    2. ${c.bold}plan/01-foundation.md${c.off} is the one phase the framework prescribes. Mark 01.1 [~],`);
-say(`       set the phase to "in progress" in the file and plan/00-INDEX.md, and write plan/NOW.md.`);
-say(`    3. Read ${c.bold}AGENTS.md${c.off}. Then ${c.bold}node .agents/cli.mjs rule${c.off} — the rulebook,`);
-say(`       one line per section. Fetch a section; never open the file.`);
-say(`    4. ${c.bold}npm run verify${c.off} before every PR.\n`);
+next.forEach((line, i) => say(`    ${i + 1}. ${line}`));
+say();

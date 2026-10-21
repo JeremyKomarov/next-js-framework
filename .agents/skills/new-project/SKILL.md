@@ -26,15 +26,15 @@ Non-interactive: `--yes --name="My App" --description="..." --db`.
 
 It runs `create-next-app` (TypeScript, `src/`, App Router, no Tailwind, no ESLint — the kit's
 config replaces it), installs the kit and the `verify` chain, writes the `shared/`, `core/` and
-`store/` indexes, fills `AGENTS.md`, wires Claude Code and Codex, and replaces the framework's
-README with your project's.
+`store/` indexes, writes `AGENTS.md` from `.agents/templates/root-guide.md` and fills it in, writes
+`.github/workflows/verify.yml`, wires Claude Code and Codex, and replaces the framework's README
+with your project's. Unless the target is already inside a git repository it runs `git init`
+before installing, so `postinstall` wires the pre-commit plan check (05-WORKFLOW.md §3).
 
 ## Then, in this order
 
-1. **`git init && npm run hooks`.** There is no repository for `npm install`'s `postinstall` to
-   wire the pre-commit plan check into until now — this points git at
-   `.agents/kit/hooks` so step 2 below is actually enforced per commit, not just at `npm run
-verify` (05-WORKFLOW.md §3).
+1. **If the scaffolder said so, `npm run hooks`** — only when the project is not yet its own git
+   repository (it sits inside another one, or git was unavailable). Otherwise the hook is wired.
 2. **`plan/01-foundation.md`** is the one phase the framework prescribes, and it is the work. Mark
    `01.1` `[~]`, set the phase to `in progress` in the file **and** in `plan/00-INDEX.md`, and
    write `plan/NOW.md`'s **Step**, **Since** and **State** — `npm run guard` fails on any of those

@@ -1,0 +1,7 @@
+# This repository is not Prettier-formatted: the code is hand-wrapped at 100 columns and the
+# markdown tables are aligned by hand. Ignoring everything keeps an editor's or agent's
+# format-on-save from reflowing whole files, so a diff shows only what changed.
+#
+# Framework-only: the scaffolder never copies this into a project, and removes it on an in-place
+# scaffold (bin/create.mjs).
+**/*

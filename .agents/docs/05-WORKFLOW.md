@@ -111,14 +111,15 @@ yet**: a guard that fails on an empty project is a guard people delete.
 | `01 §8` `NEXT_PUBLIC_*` read outside `core/config/env.ts` | same — `no-restricted-syntax` |
 | `02 §2` a stylesheet imported by anything but its `*.classes.ts` | same |
 | `02 §2` a class name that does not exist | `classMap()` at runtime in dev; `guard` statically |
-| `02 §7` no hardcoded colour outside `tokens.scss` | `guard` |
+| `02 §7` no hardcoded colour outside `tokens.scss` — hex, colour functions, named colours | `guard` |
 | `03 §2` an error code that does not exist | `ApiErrorCode` derived from `API_ERROR_CODES` |
 | `04 §2` a route that ignores its feature flag | `featurePage()` is the only way a page is built |
 | `04 §3` a feature with no index | `guard` |
-| every `§N` citation resolves | `guard` |
+| every `§N` citation resolves, and one in a framework file names its document | `guard` |
 | the plan index, the phase files and `NOW.md` agree (§2) | `guard`, and a `pre-commit` hook running it per commit — see below |
 | a skill differs between agents, or is missing from one (§4) | `guard` |
-| a `SKILL.md` frontmatter key some agent will silently drop the skill over (§4) | `guard` |
+| a `SKILL.md` frontmatter key Claude Code does not recognise, and so silently ignores (§4) | `guard` |
+| `npm run verify` itself, on every push | `.github/workflows/verify.yml`, written by the scaffolder |
 | registry invariants the type system cannot state | `features.const.test.ts` |
 
 **The plan check also runs on every commit, not only at `npm run verify`.** `npm install` wires
@@ -156,8 +157,8 @@ node .agents/cli.mjs rule 02 7       # §7, and nothing else
 node .agents/cli.mjs rule -q tokens  # which sections mention it
 ```
 
-**A citation is an address; this is what fetches it.** `02 §7` is ~330 words. `02-COMPONENTS.md`
-is ~1,840. Opening the file to answer a one-section question costs five times what the answer
+**A citation is an address; this is what fetches it.** `02 §7` is ~400 words. `02-COMPONENTS.md`
+is ~2,200. Opening the file to answer a one-section question costs five times what the answer
 does, and an agent following three citations in a task pays for most of the rulebook without
 being asked to read it.
 
@@ -204,11 +205,12 @@ npm run sync:agents    # the .claude/skills mirror, the CLAUDE.md shims, orphan 
 **Edit the canonical file, never the mirror**; `sync:agents` overwrites it, so an edit in the wrong
 place is discarded.
 
-**Frontmatter is held to an allowlist** — `name`, `description`, `argument-hint`, `allowed-tools`,
-`model`, `disable-model-invocation`. A key borrowed from a *rules* file (`paths`, `globs`,
-`alwaysApply`) is not ignored: Claude Code drops the whole skill, with no error anywhere, so the
-playbook goes missing from one agent and nothing says so. `sync:agents` will not repair this one —
-it cannot guess what you meant, and claiming "in sync" over it would be a silent success.
+**Frontmatter is held to an allowlist** — the keys Claude Code documents, listed in
+`.agents/cli.mjs` as `FRONTMATTER_KEYS` (`docs/DECISIONS.md #30`). Claude Code ignores any other key
+with no error, so a misspelling silently undoes what the key was for: `disable_model_invocation`,
+with underscores, leaves a skill the model can invoke. A key borrowed from a *rules* file — `globs`,
+`alwaysApply` — does nothing at all. `sync:agents` will not repair this one — it cannot guess what
+you meant, and claiming "in sync" over it would be a silent success.
 
 `name` and `description` are the only two both agents read; the rest are Claude Code's, and Codex
 ignores them. So **keep the body carrying the instruction, never the frontmatter**: a playbook that
@@ -266,7 +268,8 @@ git diff                                      # review, then commit — or throw
 **Why it is safe, in the order that matters:** it refuses a dirty tree, so the diff is the update
 and nothing else · it works on a `framework-update-<version>` branch (`--no-branch` to stay put) ·
 **it writes only under `.agents/`**, so no update can break your code by touching it · it commits
-nothing.
+nothing · it prints the one line that undoes it, including the files it *added*, which
+`git checkout .` alone leaves behind.
 
 `docs/` is mirrored, extras deleted. `skills/` cannot be — your own playbooks live there too — so
 same-named ones are replaced, yours are never touched, and `version.json` records which playbooks
@@ -287,6 +290,10 @@ silently. Fix it in the framework and release it (§7).
 2. Bump `version` in `.agents/version.json`. Any scheme; it is compared as a label, not a range.
 3. Add an entry at the **top** of `.agents/UPGRADING.md` — `## <version> — <date>` and what a
    project must **do**. "Nothing — `npm run verify` covers it" is the common and correct answer.
+   Anything outside `.agents/` — a file to delete, a root file to change — is never correct to
+   leave out: `update` cannot touch it, so the note is the only way a project hears of it. The
+   framework's tests fail if the newest entry and `version.json` disagree, or if `version.json`'s
+   `skills` is not exactly what `.agents/skills/` ships.
 4. Commit. Projects pick it up with `npm run update:framework`.
 
 A change that needs no `UPGRADING.md` entry and no version bump is a change no project can tell

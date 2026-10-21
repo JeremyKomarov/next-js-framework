@@ -51,3 +51,26 @@ jobs:
           cd "$RUNNER_TEMP/scaffolded"
           node .agents/cli.mjs check
           node .agents/cli.mjs rule 02 7
+          # The project gets its own guide and its own CI, never the framework's (DECISIONS.md #28, #29).
+          grep -q "^# Scaffold Check — working guide" AGENTS.md
+          git diff --no-index --quiet .github/workflows/verify.yml .agents/kit/ci/verify.yml
+          test -d .git
+
+  # The README's promise is a repository where `npm run verify` works. The job above scaffolds with
+  # --skip-install, so it never runs typecheck, lint or vitest against what the scaffolder wrote —
+  # this one does, once, on Linux: the dependency set is the same on every platform, and the
+  # platform-specific breakage is the job above's to find.
+  scaffold-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: scaffold a project, install it, and run its own gate
+        run: |
+          node bin/create.mjs "$RUNNER_TEMP/installed" --yes \
+            --name="Install Check" --description="Built by CI."
+          cd "$RUNNER_TEMP/installed"
+          npm run verify
+          test "$(git config core.hooksPath)" = ".agents/kit/hooks"

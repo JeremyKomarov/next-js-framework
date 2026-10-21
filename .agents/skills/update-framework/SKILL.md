@@ -24,12 +24,16 @@ Enforces `05 §6`.
    - no playbook of your own was removed (`.agents/skills/`), only ones the framework dropped;
    - the removed and changed docs are ones you can account for.
 5. Commit the framework bump **and** the code it required as one commit, on the update branch.
-6. If it goes badly: `git checkout . && git switch -`. Nothing of yours moved.
+6. If it goes badly, run the abort line the script printed:
+   `git checkout -- . && git clean -fd -- .agents && git switch - && git branch -D framework-update-<version>`.
+   `git checkout .` alone is not enough — it leaves behind every file the update *added*. The tree
+   was clean before the update, so everything untracked under `.agents/` is the update's. Nothing
+   of yours moved.
 
 ## Do not
 
 - Edit anything under `.agents/` in a project to make an update fit. The next update overwrites it
-  silently. Fix it in the framework repository and release it (§5a).
+  silently. Fix it in the framework repository and release it (`05 §7`).
 - Skip `npm run verify` because the diff looked small. The point of the update is the rules that
   changed, and they only speak through the guards.
 

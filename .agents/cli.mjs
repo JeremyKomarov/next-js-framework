@@ -20,7 +20,7 @@ import {
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { join, resolve, dirname, relative, parse, sep } from "node:path";
+import { join, resolve, dirname, relative, parse, sep, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
@@ -43,7 +43,15 @@ function projectRoot() {
 const ROOT = projectRoot();
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-const flag = (name) => argv.find((a) => a.startsWith(`--${name}`));
+// `--name=value` or `--name value` — both get typed at a prompt, and the second used to be dropped
+// silently, so `check --only plan` ran every check. null when absent, "" when given no value.
+const option = (name) => {
+  const i = argv.findIndex((a) => a === `--${name}` || a.startsWith(`--${name}=`));
+  if (i === -1) return null;
+  if (argv[i].includes("=")) return argv[i].split("=").slice(1).join("=");
+  const next = argv[i + 1];
+  return next && !next.startsWith("-") ? next : "";
+};
 
 // ------------------------------------------------------------------- utilities
 const posix = (p) => p.split(sep).join("/");
@@ -52,7 +60,10 @@ const lf = (s) => s.replace(/\r\n/g, "\n");
 const eolOf = (s) => (s.includes("\r\n") ? "\r\n" : "\n");
 const read = (p) => lf(readFileSync(p, "utf8"));
 const hash = (p) => createHash("sha256").update(readFileSync(p)).digest("hex");
-const noise = (p) => p.includes("node_modules") || p.includes(".next") || p.includes(".git");
+// Matched by whole path segment: a substring test also skipped `.github/`, `.gitkeep` and any file
+// whose name merely contained ".next".
+const NOISE = new Set(["node_modules", ".next", ".git"]);
+const noise = (p) => posix(isAbsolute(p) ? relative(ROOT, p) : p).split("/").some((s) => NOISE.has(s));
 // `**` does not descend into a dot-directory, and the whole framework lives in .agents/. A bare
 // "**/*.md" therefore skips the rulebook, the playbooks and the templates and prints "clean"
 // having read almost nothing.
@@ -71,11 +82,14 @@ const SHIM = `@AGENTS.md
 <!-- If the import above did not expand, read ./AGENTS.md in this directory now, and the
      AGENTS.md of any directory you are about to write in. This file holds no rules of its own. -->
 `;
-// Skill keys. `name` and `description` are the two both agents read; the rest are Claude Code's
-// and Codex ignores them. A key from a *rules* file (paths, globs, alwaysApply) is not ignored —
-// Claude Code drops the whole skill, silently. 05-WORKFLOW.md §4.
+// Skill keys: the frontmatter Claude Code documents. `name` and `description` are the two both
+// agents read; Codex ignores the rest. Claude Code ignores a key it does not recognise, with no
+// error — so a misspelled `disable_model_invocation` leaves a skill model-invocable and nothing
+// says so. The allowlist is what turns that typo into a failure. 05-WORKFLOW.md §4, DECISIONS.md #30.
 const FRONTMATTER_KEYS = new Set([
-  "name", "description", "argument-hint", "allowed-tools", "model", "disable-model-invocation",
+  "name", "description", "when_to_use", "argument-hint", "arguments", "disable-model-invocation",
+  "user-invocable", "allowed-tools", "disallowed-tools", "model", "effort", "context", "agent",
+  "background", "hooks", "paths", "shell", "metadata", "license", "compatibility",
 ]);
 // Codex stops reading project docs at project_doc_max_bytes — 32 KiB by default, counted across the
 // root AGENTS.md and every nested one on the path to where it was launched. The rest is cut off
@@ -102,7 +116,7 @@ function skills() {
 // The rulebook parsed into addressable sections. `NN §N` is the address format used in every
 // citation; this is what makes it resolvable, for the guard and for the `rule` command alike.
 // Without it a citation to one section costs a read of the whole file — 02-COMPONENTS.md is
-// ~2,600 tokens to answer a 350-token question, every time. 05-WORKFLOW.md §3a.
+// ~2,200 words to answer a ~400-word question, every time. 05-WORKFLOW.md §3a.
 function rulebook() {
   const dir = join(ROOT, RULEBOOK);
   if (!existsSync(dir)) return [];
@@ -273,6 +287,18 @@ function checkDocs(fail) {
   // rulebook merge left exactly one dangling link behind in the seeded plan index, which then
   // shipped in every project made from the template until this check found it.
   const DOC_LINK = /(?:\.agents\/)?docs\/(\d\d-[A-Z-]+\.md)/g;
+  // A section mark with no document number in front of it. The citation check above cannot see
+  // one, and a playbook shipped pointing at a section that never existed because of it
+  // (DECISIONS.md #31). It resolves against the document the same line names before it
+  // ("rule 02 7 — §7", "05-WORKFLOW.md ... §2") or straight after it ("§2 of 05-WORKFLOW.md");
+  // inside a rulebook file, against that file. One that resolves against nothing fails.
+  const BARE = /§\s?(\d+[a-z]?)/g;
+  const NAMED_BEFORE = /(\d\d)-[A-Z-]+\.md|\brule (\d\d)\b|\b(\d\d) §/g;
+  const NAMED_AFTER = /^§\s?\d+[a-z]?\s+of\s+`?(?:\.agents\/)?(?:docs\/)?(\d\d)-[A-Z-]+\.md/;
+  // Only where the framework's citations live. A project's own prose may use § for its own
+  // sections — a contract, a spec — and a guard that fires on those gets deleted.
+  const citesRulebook = (file) => file.startsWith(".agents/") || file.startsWith("plan/") ||
+    /(^|\/)AGENTS\.md$/.test(file) || file === "docs/DECISIONS.md" || !file.endsWith(".md");
 
   // The guard's own test asserts that a dangling citation fails, so its fixtures contain dangling
   // citations. It is the only file in the repository allowed to, it is framework-owned, and it
@@ -282,6 +308,8 @@ function checkDocs(fail) {
 
   for (const file of files("**/*.{md,ts,tsx,mjs,scss}")) {
     if (file === SELF_TEST) continue;
+    const ownDoc = file.match(/^\.agents\/docs\/(\d\d)-/)?.[1];
+    const checkBare = citesRulebook(file);
     read(join(ROOT, file)).split("\n").forEach((line, i) => {
       for (const [, docNum, sectionNum] of line.matchAll(CITATION)) {
         const docFile = byNumber.get(docNum);
@@ -294,6 +322,22 @@ function checkDocs(fail) {
         if (!filenames.has(name))
           fail(`${file}:${i + 1}  links ${RULEBOOK}/${name}, which does not exist — a rulebook ` +
                `file was renamed or merged without updating what points at it`);
+      }
+      if (!checkBare) return;
+      for (const m of line.matchAll(BARE)) {
+        const before = line.slice(0, m.index);
+        if (/\d\d(?:-[A-Z-]+\.md)?`?\s+$/.test(before)) continue;     // a full citation — checked above
+        const doc = [...before.matchAll(NAMED_BEFORE)].at(-1)?.slice(1).find(Boolean) ??
+          line.slice(m.index).match(NAMED_AFTER)?.[1] ??
+          (byNumber.has(ownDoc) ? ownDoc : null);
+        if (!doc) {
+          fail(`${file}:${i + 1}  §${m[1]} names no document — write it as \`NN §${m[1]}\` so it ` +
+               `can be checked and fetched`);
+        } else if (!byNumber.has(doc)) {
+          fail(`${file}:${i + 1}  §${m[1]} resolves to docs/${doc}-*.md, which does not exist`);
+        } else if (!sections.get(byNumber.get(doc)).has(m[1])) {
+          fail(`${file}:${i + 1}  §${m[1]} resolves to ${byNumber.get(doc)}, which has no such section`);
+        }
       }
     });
   }
@@ -347,14 +391,55 @@ function checkStyles(fail) {
   const scannable = (src) => src
     .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
     .split("\n")
-    .map((line) => (line.trim().startsWith("//") ? "" : line.replace(/\burl\([^)]*\)|\bvar\([^)]*\)/g, "")));
+    .map((line) => (line.trim().startsWith("//") ? "" : line.replace(/\burl\([^)]*\)/g, "")));
+  const withoutVars = (line) => line.replace(/\bvar\([^)]*\)/g, "");
+
+  // Hex was the only spelling checked, so `color: white` and `rgb(0 0 0)` broke the same rule and
+  // passed (DECISIONS.md #31). A colour function wrapping a var() is a token being adjusted, not a
+  // literal, and is left alone. A named colour only counts as the value of a colour property —
+  // `tan` and `linen` mean nothing elsewhere.
+  const COLOUR_FN = /\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g;
+  const DECLARATION = /([a-zA-Z-]+)\s*:\s*([^;{}]+)/g;
+  const COLOUR_PROP = new RegExp("^(?:color|background(?:-color)?|border(?:-(?:top|right|bottom|left|" +
+    "block|inline)(?:-(?:start|end))?)?(?:-color)?|outline(?:-color)?|fill|stroke|(?:box|text)-shadow|" +
+    "text-decoration(?:-color)?|caret-color|accent-color|column-rule(?:-color)?|stop-color|" +
+    "flood-color|lighting-color|scrollbar-color)$", "i");
+  const NAMED_COLOURS = new Set(`aliceblue antiquewhite aqua aquamarine azure beige bisque black
+    blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue
+    cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki
+    darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen darkslateblue
+    darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey
+    dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green
+    greenyellow grey honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen
+    lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen lightgrey
+    lightpink lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue
+    lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid
+    mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred
+    midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered
+    orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum
+    powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen
+    seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal
+    thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen`.split(/\s+/));
+
+  const literalColour = (line) => {
+    const bare = withoutVars(line);
+    const hex = bare.match(/#[0-9a-fA-F]{3,8}\b/)?.[0];
+    if (hex) return hex;
+    for (const [fn, args] of line.matchAll(COLOUR_FN)) if (!args.includes("var(")) return fn;
+    for (const [, prop, value] of bare.matchAll(DECLARATION)) {
+      if (!COLOUR_PROP.test(prop)) continue;
+      const named = value.match(/[a-zA-Z][\w-]*/g)?.find((w) => NAMED_COLOURS.has(w.toLowerCase()));
+      if (named) return named;
+    }
+    return null;
+  };
 
   for (const file of sheets) {
     if (file === TOKENS || file.endsWith("/" + TOKENS) || file === TOKENS_TEMPLATE) continue;
     scannable(read(join(ROOT, file))).forEach((line, i) => {
-      const hex = line.match(/#[0-9a-fA-F]{3,8}\b/);
-      if (hex) fail(`${file}:${i + 1}  hardcoded colour ${hex[0]} — use a var(--…) from ${TOKENS} ` +
-                    `(02-COMPONENTS.md §7)\n    ${line.trim().slice(0, 110)}`);
+      const colour = literalColour(line);
+      if (colour) fail(`${file}:${i + 1}  hardcoded colour ${colour} — use a var(--…) from ${TOKENS} ` +
+                       `(02-COMPONENTS.md §7)\n    ${line.trim().slice(0, 110)}`);
     });
   }
 
@@ -405,9 +490,9 @@ function checkAgents(fail, fix) {
            `open the playbook`, true);
     for (const key of s.keys) {
       if (FRONTMATTER_KEYS.has(key)) continue;
-      fail(`${where}  frontmatter key "${key}" is not a skill key — Claude Code drops the whole ` +
-           `skill rather than ignoring the key, so the playbook disappears with no error. ` +
-           `Allowed: ${[...FRONTMATTER_KEYS].join(", ")}`, true);
+      fail(`${where}  frontmatter key "${key}" is not one Claude Code recognises — it ignores the ` +
+           `key with no error, so whatever it was meant to do silently does not happen. Check the ` +
+           `spelling (hyphens, not underscores). Allowed: ${[...FRONTMATTER_KEYS].join(", ")}`, true);
     }
   }
 
@@ -508,8 +593,9 @@ function checkAgents(fail, fix) {
 const CHECKS = { plan: checkPlan, docs: checkDocs, styles: checkStyles, agents: checkAgents };
 
 function check() {
-  const only = flag("only")?.split("=")[1]?.split(",").filter(Boolean);
-  const names = only?.length ? only : Object.keys(CHECKS);
+  const only = option("only");
+  if (only === "") { console.error(`cli: --only needs a value, e.g. --only=plan. Known: ${Object.keys(CHECKS).join(", ")}`); process.exit(2); }
+  const names = only ? only.split(",").filter(Boolean) : Object.keys(CHECKS);
   for (const n of names) if (!CHECKS[n]) { console.error(`cli: no such check "${n}". Known: ${Object.keys(CHECKS).join(", ")}`); process.exit(2); }
 
   const failures = [];
@@ -564,7 +650,10 @@ function update() {
 
   let from = resolve(ROOT, source);
   if (/^(https?:|git@|ssh:)/.test(source)) {
-    from = mkdtempSync(join(tmpdir(), "framework-"));
+    const clone = mkdtempSync(join(tmpdir(), "framework-"));
+    // On every exit, including die(): process.exit() skips finally blocks.
+    process.on("exit", () => rmSync(clone, { recursive: true, force: true }));
+    from = clone;
     console.log(`cloning ${source} ...`);
     execFileSync("git", ["clone", "--depth", "1", source, from], { stdio: "inherit" });
   }
@@ -625,15 +714,18 @@ function update() {
   console.log(notes ? `\nWhat your project may have to do:\n\n${notes}\n` : "\nNo upgrade notes — the guards are the migration.\n");
   console.log("Next:\n  npm run verify     a new rule arrives as a failure naming the file and the section");
   console.log("  git diff           review it — nothing outside .agents/ was opened");
-  console.log(`  git checkout . ${NO_BRANCH ? "" : "&& git switch -  "}   abort, and it is as if this never ran`);
+  // The tree was clean before this ran, so every untracked file under .agents/ is one it added —
+  // `git checkout .` alone leaves those behind, along with the branch.
+  console.log(`  git checkout -- . && git clean -fd -- .agents${NO_BRANCH ? "" : ` && git switch - && git branch -D ${branch}`}`);
+  console.log("                     abort — every file back, everything it added gone");
 }
 
 // =================================================================== command: rule
 // Prints one section of the rulebook, so a citation costs what it claims to cost.
 //
 // `NN §N` was always the address format; until this existed there was no way to fetch one, so
-// every citation was answered by reading the whole file — 02-COMPONENTS.md is ~2,600 tokens to
-// answer a 350-token question, and an agent following three citations paid for the rulebook
+// every citation was answered by reading the whole file — 02-COMPONENTS.md is ~2,200 words to
+// answer a ~400-word question, and an agent following three citations paid for the rulebook
 // twice. The addresses were precise and the retrieval was not.
 //
 //   rule            every section, one line each — the map, cheaper than the index that describes it
@@ -733,8 +825,8 @@ switch (cmd) {
     console.log(`.agents/cli.mjs — the rulebook reader, the checks, the sync and the updater
 
   rule [NN] [N] [-q term]                 npm run rule       — read one section, not a file
-  check [--only=plan,docs,styles,agents]  npm run guard
-  sync                                    npm run sync:agents — the Claude Code mirror and shims
+  check [--only plan,docs,styles,agents]  npm run guard
+  sync                                   npm run sync:agents — the Claude Code mirror and shims
   update [path-or-url] [--no-branch]      npm run update:framework
   hooks                                   npm run hooks       — wires the pre-commit plan check`);
     process.exit(cmd ? 2 : 0);

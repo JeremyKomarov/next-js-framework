@@ -6,7 +6,7 @@ description: Check the playbook roster itself for overlap and drift - two skills
 # audit-skills
 
 `sync-index` catches a directory's index drifting from its disk. `guard`'s `agents` check catches
-a skill missing from a mirror, or a frontmatter key some agent silently drops. Neither looks at
+a skill missing from a mirror, or a frontmatter key Claude Code silently ignores. Neither looks at
 whether the playbooks themselves still make sense as a set — this is that check, and it is the
 same "deliberately not mechanized" judgement call as `02 §5`'s "does `shared/` already have
 something that does this," aimed at `.agents/skills/` instead of a component folder (`05 §3`).

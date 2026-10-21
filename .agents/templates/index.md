@@ -122,7 +122,7 @@ generalize it here instead of copying it. Use the `promote` playbook.
 That table is an **example** of a filled-in index, not a list to build. A project's kit is chosen
 from its own screens by the `plan-kit` playbook (`02 §6`) and recorded above the components table
 under `## The kit for this project`. Whatever it holds exists before the first feature screen does,
-each component shipping its variants as exported consts and its own responsive behaviour (§8). A
+each component shipping its variants as exported consts and its own responsive behaviour (`02 §8`). A
 feature never re-solves either.
 
 The **`Replaces`** column is the anti-duplication rule in table form. Its cells are

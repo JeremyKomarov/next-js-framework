@@ -24,10 +24,10 @@ cheapest first.
 
 | Tier | Where | Loads | Answers | Costs |
 |---|---|---|---|---|
-| 1 | root `AGENTS.md` | always | *Where do I look?* | ~1,000 words |
+| 1 | root `AGENTS.md` | always | *Where do I look?* | ~1,200 words |
 | 2 | `<dir>/AGENTS.md` | when the agent touches that directory | *Does something here already do this?* | ~200 words |
-| 3 | `npm run rule` | when tier 2 does not settle it | *Which rule covers this?* | ~275 words |
-| 4 | `npm run rule -- 02 7` | when tier 1, 2 or 3 cites it | *What is the actual rule?* | ~330 words |
+| 3 | `npm run rule` | when tier 2 does not settle it | *Which rule covers this?* | ~290 words |
+| 4 | `npm run rule -- 02 7` | when tier 1, 2 or 3 cites it | *What is the actual rule?* | ~200 words |
 
 Tier 2 is the win, and it only works if those index tables stay true — so an index is part of the
 change that altered the code, `npm run guard` proves the file exists, and the `sync-index` playbook
@@ -44,7 +44,7 @@ node .agents/cli.mjs rule 02 7       # §7, and nothing else
 node .agents/cli.mjs rule -q tokens  # which sections mention it
 ```
 
-This is tier 4, and it is the difference between a citation costing ~330 words and ~1,840. The
+This is tier 4, and it is the difference between `02 §7` costing ~400 words and ~2,200. The
 addresses were always section-level; until this existed, retrieval was file-level, so the
 precision was decorative and every cited rule was paid for at five times its size. The map is
 generated from the files, so it cannot go stale (`docs/DECISIONS.md` #20).
@@ -64,13 +64,16 @@ never create the folder. **No auth vendor is prescribed.** No Tailwind, no CSS-i
   docs/            the rulebook. Five files, 38 sections, fetched with `rule`.
   skills/          the twelve playbooks. Read natively by Codex, mirrored for Claude Code.
   templates/       the component kit, the API chain, the index shapes, the phase shape
-  kit/             eslint config, tsconfig, vitest config, the registry test
+  kit/             eslint config, tsconfig, vitest config, the registry test, the pre-commit
+                   hook, and ci/verify.yml — the project's CI workflow
   cli.mjs          the rule reader, the four checks, the skill sync, the framework updater
-  cli.test.mjs     the guard, guarded — 37 tests. Framework-only; never copied to a project.
+  cli.test.mjs     the guard, guarded. Framework-only; never copied to a project.
   version.json     which version this project is on
   UPGRADING.md     what each version asks of a project — newest first
 bin/create.mjs     the scaffolder. Deleted from a project once it has run.
-AGENTS.md          the root working guide — canonical, read by Codex and (via CLAUDE.md) Claude Code
+AGENTS.md          in this repository, the guide for working on the framework. A project's root
+                   guide is .agents/templates/root-guide.md, which the scaffolder copies in.
+.github/           in this repository, the framework's CI. A project gets its own from the kit.
 .claude/           settings.json (the command allowlist) and the skills mirror
 docs/              YOURS — DECISIONS.md and GLOSSARY.md, seeded; your own docs beside them
 plan/              YOURS — the table of contents, NOW.md, one small file per phase
@@ -79,7 +82,8 @@ plan/              YOURS — the table of contents, NOW.md, one small file per p
 
 ## Enforcement
 
-`npm run verify` = `typecheck` + `lint` + `guard` + `test`. One command, and nothing merges red.
+`npm run verify` = `typecheck` + `lint` + `guard` + `test`. One command, and nothing merges red:
+every scaffolded project ships `.github/workflows/verify.yml`, which runs it on every push.
 
 `npm run guard` is four checks in one script — plan, docs, styles, agents — and
 `npm run guard -- --only=plan` runs one. **Every check exits 0 with a message when its target does
@@ -92,7 +96,8 @@ one thing, and asserts the guard names it — in both directions, because a chec
 correct code gets disabled within a week.
 
 **Windows, macOS and Linux are all first-class,** and CI runs the full suite plus a real scaffold
-on each. They fail differently: Windows brings CRLF, absolute glob paths and symlinks that need
+on each — and on Linux installs one and runs its own `npm run verify`, which is the only proof the
+promise at the top of this page holds. They fail differently: Windows brings CRLF, absolute glob paths and symlinks that need
 developer mode; macOS brings a case-insensitive filesystem, which the mirrors' byte-for-byte
 comparison runs straight into; Linux is where all of that is invisible
 (`docs/DECISIONS.md` #19, #22).
@@ -116,9 +121,9 @@ The last column is written by `npm run sync:agents`. **Nobody writes a shim, and
 allows one, so an edit propagates with no action; where symlinks are refused it becomes a verified
 copy and `npm run guard` fails on a byte of drift.
 
-The guard holds each `SKILL.md`'s frontmatter to keys Claude Code accepts. A key borrowed from a
-*rules* file — `paths`, `globs` — is not ignored: Claude Code drops the whole skill and says
-nothing. Codex reads only `name` and `description`, so **the instruction lives in the body of a
+The guard holds each `SKILL.md`'s frontmatter to the keys Claude Code documents. Claude Code
+ignores any other key without a word, so a misspelled `disable_model_invocation` quietly leaves a
+skill invocable — the allowlist turns that typo into a failure. Codex reads only `name` and `description`, so **the instruction lives in the body of a
 `SKILL.md`, never in its frontmatter.** Why only these two: `docs/DECISIONS.md` #26.
 
 ## Updating a project already using it
@@ -131,11 +136,12 @@ npm run verify      # the guards are the migration
 ```
 
 It refuses a dirty tree, works on a branch, **writes only under `.agents/`** — so no update can
-break your code by touching it — and commits nothing.
+break your code by touching it — commits nothing, and prints the one line that undoes it. What a
+project must change outside `.agents/` arrives as an `.agents/UPGRADING.md` note it prints.
 
 ## Adapting it
 
 The opinions are written down with their reasons in [`docs/DECISIONS.md`](docs/DECISIONS.md) —
-twenty-six numbered entries, append-only. Disagreeing is fine; do it by adding the next entry,
+numbered and append-only. Disagreeing is fine; do it by adding the next entry,
 superseding one, so the next person can see what changed and why. Editing the reasoning out is how
 a convention becomes a superstition.

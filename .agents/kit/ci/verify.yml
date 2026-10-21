@@ -1,0 +1,28 @@
+# The project's gate, on every push. Written to .github/workflows/verify.yml by the scaffolder;
+# from then on it is yours — add jobs, a deploy, a matrix.
+#
+# `npm run verify` is what every change is held to before a PR (.agents/docs/05-WORKFLOW.md §3),
+# and the pre-commit hook runs the plan check per commit — but both are local, and
+# `git commit --no-verify` skips the hook by design. This is the copy nobody can skip
+# (docs/DECISIONS.md #24, #28).
+#
+# `npm ci` needs package-lock.json committed. A project scaffolded with --skip-install has none
+# until its first `npm install`.
+name: verify
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run verify

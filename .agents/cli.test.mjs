@@ -12,7 +12,9 @@
 // within a week, so the empty project and the false-positive regressions are tested too.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync, readFileSync, existsSync } from "node:fs";
+import {
+  mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync, readFileSync, existsSync, readdirSync,
+} from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -116,6 +118,18 @@ test("the seeded fixture passes, or every negative test below proves nothing", (
   passes(fixture());
 });
 
+// `--only plan` with a space used to be dropped silently, and every check ran.
+test("check: --only takes its value with = or with a space, and refuses none", () => {
+  const root = fixture();
+  for (const args of [["--only=plan"], ["--only", "plan"]]) {
+    const r = clean(root, ...args);
+    assert.equal(r.code, 0, r.all);
+    assert.match(r.out, /plan/);
+    assert.ok(!r.out.includes("docs"), `expected only the plan check to run for ${args.join(" ")}:\n${r.out}`);
+  }
+  assert.equal(clean(root, "--only").code, 2);
+});
+
 // ===================================================================== check: plan
 test("plan: a phase in progress with no [~] step fails", () => {
   fails(fixture({
@@ -195,6 +209,35 @@ test("docs: a valid citation in any file type passes", () => {
   }), "--only=docs");
 });
 
+// The bug this was written for: a playbook cited "(§5a)" — no document, and no such section in
+// any of them — and the full-citation check could not see it (DECISIONS.md #31).
+test("docs: a § with no document named fails in a framework file", () => {
+  fails(fixture({ ".agents/skills/thing/SKILL.md": SKILL("thing") + "\nRelease it upstream (§5a).\n" }),
+    "§5a names no document", "--only=docs");
+});
+
+test("docs: a § resolved against the document its line names must exist there", () => {
+  fails(fixture({ "AGENTS.md": "# fixture\n\nSee 05-WORKFLOW.md, and then §99.\n" }),
+    "§99 resolves to 05-WORKFLOW.md, which has no such section", "--only=docs");
+});
+
+test("docs: a § that names its document before or after it, or sits in a rulebook file, passes", () => {
+  passes(fixture({
+    "AGENTS.md": "# fixture\n\nnode .agents/cli.mjs rule 02 7   # §7, and nothing else\n" +
+                 "This is the failure §2 of `05-WORKFLOW.md` prevents.\n" +
+                 "See [`05-WORKFLOW.md`](.agents/docs/05-WORKFLOW.md) §2.\n",
+    // A project's own prose may use § for its own sections; only framework files are held to it.
+    "src/legal/terms.md": "Clause §14 applies.\n",
+  }), "--only=docs");
+});
+
+// The skip list used to be a substring test, so any path merely containing ".next" or ".git" —
+// this file — was never read at all.
+test("docs: a file whose name only contains .next is still checked", () => {
+  fails(fixture({ "src/notes.next-steps.md": "See 02-COMPONENTS.md §99.\n" }),
+    "which has no such section", "--only=docs");
+});
+
 // Claude Code reads CLAUDE.md, not AGENTS.md — a nested index with no shim is invisible to it.
 test("docs: an AGENTS.md with no CLAUDE.md beside it fails, and sync writes it", () => {
   const root = fixture({ "src/shared/AGENTS.md": "# shared\n" });
@@ -236,6 +279,32 @@ test("styles: url(#id), var() and block comments are not colours", () => {
   }), "--only=styles");
 });
 
+// Hex was the only spelling the check knew; these broke the same rule and passed (DECISIONS.md #31).
+test("styles: a colour function outside tokens.scss fails", () => {
+  fails(fixture({ "src/shared/Button.module.scss": ".button {\n  background: rgb(0 0 0 / 50%);\n}\n" }),
+    "hardcoded colour rgb", "--only=styles");
+});
+
+test("styles: a named colour outside tokens.scss fails", () => {
+  fails(fixture({ "src/shared/Button.module.scss": ".button {\n  border: 1px solid white;\n}\n" }),
+    "hardcoded colour white", "--only=styles");
+});
+
+test("styles: keywords, a colour function over a var(), and non-colour properties pass", () => {
+  passes(fixture({
+    "src/shared/Badge.module.scss": `.badge {
+  color: currentColor;
+  background: transparent;
+  border-color: color-mix(in srgb, var(--brand-500) 40%, transparent);
+  box-shadow: 0 0 0 1px rgb(var(--shadow-rgb) / 20%);
+  font-family: var(--font-sans);
+  &:hover { outline: 2px solid var(--focus-ring); }
+}
+@media (min-width: 768px) { .badge { animation-name: tan; } }
+`,
+  }), "--only=styles");
+});
+
 test("styles: a class map naming a class the stylesheet does not define fails", () => {
   fails(fixture({
     "src/shared/Card/Card.module.scss": ".card { display: block; }\n",
@@ -253,9 +322,20 @@ test("styles: a class map matching its stylesheet, including BEM parts, passes",
 });
 
 // =================================================================== check: agents
-test("agents: a frontmatter key some agent silently drops the skill over fails", () => {
-  const root = fixture({ ".agents/skills/thing/SKILL.md": SKILL("thing", "globs: '**/*.ts'\n") });
-  fails(root, "is not a skill key", "--only=agents");
+// Claude Code ignores a key it does not recognise, so a misspelling silently undoes what the key
+// was for — this one would leave the skill model-invocable (DECISIONS.md #30).
+test("agents: a frontmatter key Claude Code does not recognise fails", () => {
+  const root = fixture({ ".agents/skills/thing/SKILL.md": SKILL("thing", "disable_model_invocation: true\n") });
+  fails(root, "is not one Claude Code recognises", "--only=agents");
+});
+
+test("agents: documented frontmatter keys pass, including ones the old allowlist rejected", () => {
+  const root = fixture({
+    ".agents/skills/thing/SKILL.md": SKILL("thing",
+      "when_to_use: Before a release.\nuser-invocable: false\npaths: src/**\nmetadata:\n  owner: team\n"),
+  });
+  assert.equal(cli(root, "sync").code, 0);
+  passes(root, "--only=agents");
 });
 
 test("agents: a skill with no description fails", () => {
@@ -407,4 +487,112 @@ test("rule: every advertised section is fetchable", () => {
     assert.equal(r.code, 0, `rule ${doc} ${section} failed:\n${r.all}`);
     assert.ok(r.out.trim().length > 40, `rule ${doc} ${section} printed almost nothing`);
   }
+});
+
+// ===================================================================== command: update
+// The one command that deletes files in somebody's project, and the one that had no test.
+// 05-WORKFLOW.md §6.
+const json = (v) => JSON.stringify(v, null, 2) + "\n";
+
+/** A framework to update from: this CLI and rulebook, as a release that changes `kept`, adds
+ *  `added`, drops `dropped`, and has an upgrade note above the project's version. */
+function frameworkSource() {
+  const src = mkdtempSync(join(tmpdir(), "framework-src-"));
+  cleanup.push(src);
+  mkdirSync(join(src, ".agents"), { recursive: true });
+  cpSync(join(FRAMEWORK, "cli.mjs"), join(src, ".agents/cli.mjs"));
+  cpSync(join(FRAMEWORK, "docs"), join(src, ".agents/docs"), { recursive: true });
+  write(src, ".agents/skills/kept/SKILL.md", SKILL("kept") + "\nversion two\n");
+  write(src, ".agents/skills/added/SKILL.md", SKILL("added"));
+  write(src, ".agents/version.json", json({ version: "9.0.0", skills: ["added", "kept"] }));
+  write(src, ".agents/UPGRADING.md", "# Upgrading\n\n## 9.0.0 — 2026-10-21\n\n**Do:** the new thing.\n\n" +
+                                     "## 1.0.0 — 2026-09-05\n\nFirst version.\n");
+  return src;
+}
+
+/** A committed project on 1.0.0, with a playbook of its own and a rulebook file since removed. */
+function projectOnOldVersion() {
+  const root = fixture({
+    ".agents/skills/kept/SKILL.md": SKILL("kept"),
+    ".agents/skills/dropped/SKILL.md": SKILL("dropped"),
+    ".agents/skills/mine/SKILL.md": SKILL("mine"),
+    ".agents/docs/06-OLD.md": "# Old\n\n## 1. Gone\n\nRemoved upstream.\n",
+    ".agents/version.json": json({ version: "1.0.0", skills: ["dropped", "kept"] }),
+    "src/app.ts": "export {};\n",
+  });
+  assert.equal(gitCmd(root, "init").code, 0);
+  assert.equal(gitCmd(root, "add", "-A").code, 0);
+  assert.equal(commit(root, "start").code, 0);
+  return root;
+}
+
+const branchOf = (root) => gitCmd(root, "branch", "--show-current").all.trim();
+
+test("update: replaces the framework's files, keeps the project's, touches nothing outside .agents/", () => {
+  const root = projectOnOldVersion();
+  const r = cli(root, "update", frameworkSource());
+  assert.equal(r.code, 0, r.all);
+  assert.equal(branchOf(root), "framework-update-9.0.0");
+
+  const has = (p) => existsSync(join(root, p));
+  assert.ok(!has(".agents/skills/dropped"), "a playbook the framework dropped must go");
+  assert.ok(has(".agents/skills/mine/SKILL.md"), "a project's own playbook must never be touched");
+  assert.ok(has(".agents/skills/added/SKILL.md"), "a playbook the framework added must arrive");
+  assert.match(readFileSync(join(root, ".agents/skills/kept/SKILL.md"), "utf8"), /version two/);
+  assert.ok(!has(".agents/docs/06-OLD.md"), "docs/ is mirrored — a rulebook file removed upstream goes");
+
+  const version = JSON.parse(readFileSync(join(root, ".agents/version.json"), "utf8"));
+  assert.equal(version.version, "9.0.0");
+  assert.deepEqual(version.skills, ["added", "kept"]);
+
+  assert.match(r.out, /## 9\.0\.0[\s\S]*the new thing/, `the notes above the old version must print:\n${r.out}`);
+  assert.ok(!r.out.includes("First version"), "the notes at or below the old version must not");
+
+  const touched = gitCmd(root, "status", "--porcelain").all.split("\n").filter(Boolean);
+  assert.ok(touched.length > 0, "expected the update to change something");
+  for (const line of touched) assert.match(line.slice(3), /^\.agents\//, `touched outside .agents/: ${line}`);
+});
+
+// `git checkout .` was the advice, and it left every file the update added behind.
+test("update: the abort line it prints puts the project back exactly", () => {
+  const root = projectOnOldVersion();
+  const before = branchOf(root);
+  const r = cli(root, "update", frameworkSource());
+  assert.equal(r.code, 0, r.all);
+
+  const line = r.out.split("\n").find((l) => l.includes("git checkout -- ."));
+  assert.ok(line, `expected an abort line:\n${r.out}`);
+  for (const step of line.trim().split(" && ")) {
+    const [, ...args] = step.split(" ");
+    const run = gitCmd(root, ...args);
+    assert.equal(run.code, 0, `${step} failed:\n${run.all}`);
+  }
+  assert.equal(gitCmd(root, "status", "--porcelain").all.trim(), "", "nothing the update wrote may survive");
+  assert.equal(branchOf(root), before);
+  assert.equal(gitCmd(root, "branch", "--list", "framework-update-9.0.0").all.trim(), "");
+});
+
+test("update: refuses a dirty tree, and changes nothing", () => {
+  const root = projectOnOldVersion();
+  write(root, "src/wip.ts", "export {};\n");
+  const r = cli(root, "update", frameworkSource());
+  assert.equal(r.code, 1, r.all);
+  assert.match(r.all, /working tree has changes/);
+  assert.equal(gitCmd(root, "branch", "--list", "framework-update-9.0.0").all.trim(), "");
+  assert.equal(JSON.parse(readFileSync(join(root, ".agents/version.json"), "utf8")).version, "1.0.0");
+});
+
+// ======================================================== the framework's own release
+// Anything a project can notice is a release (05-WORKFLOW.md §7). The label and the newest upgrade
+// note move together, or `update` prints the wrong notes and reuses an old branch name; and the
+// skill list is what `update` deletes by, so a stale one strands a dropped playbook in projects.
+test("release: version.json names the newest UPGRADING.md entry and every shipped skill", () => {
+  const version = JSON.parse(readFileSync(join(FRAMEWORK, "version.json"), "utf8"));
+  const newest = readFileSync(join(FRAMEWORK, "UPGRADING.md"), "utf8").match(/^## (\S+) — /m)?.[1];
+  assert.equal(newest, version.version,
+    `.agents/version.json says ${version.version} but UPGRADING.md's newest entry is ${newest}`);
+
+  const shipped = readdirSync(join(FRAMEWORK, "skills"), { withFileTypes: true })
+    .filter((e) => e.isDirectory()).map((e) => e.name).sort();
+  assert.deepEqual(version.skills, shipped, "version.json's skills must be exactly .agents/skills/");
 });

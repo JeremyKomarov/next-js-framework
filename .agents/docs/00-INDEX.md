@@ -54,17 +54,17 @@ out whether one already does the thing. Four tiers replace that, cheapest first.
 
 | Tier | Where | Loads | Answers | Costs |
 |---|---|---|---|---|
-| 1 | root `AGENTS.md` | always | *Where do I look?* | ~1,000 words |
+| 1 | root `AGENTS.md` | always | *Where do I look?* | ~1,200 words |
 | 2 | `<dir>/AGENTS.md` | when an agent touches that directory | *Does something here already do this?* | ~200 words |
-| 3 | `rule` with no arguments | when tier 2 does not settle it | *Which rule covers this?* | ~275 words |
-| 4 | `rule NN N` | when tier 1, 2 or 3 cites it | *What is the actual rule?* | ~330 words |
+| 3 | `rule` with no arguments | when tier 2 does not settle it | *Which rule covers this?* | ~290 words |
+| 4 | `rule NN N` | when tier 1, 2 or 3 cites it | *What is the actual rule?* | ~200 words |
 
 Tier 2 is the win, and it only works if those index tables stay true — so an index is part of the
 change that altered the code, `guard` proves the file exists, and the `sync-index` playbook catches
 the rest.
 
-Tier 4 is what stops a citation costing more than the rule it names. `02 §7` is ~330 words;
-`02-COMPONENTS.md` is ~1,840, so opening the file to answer one question wastes five sixths of the
+Tier 4 is what stops a citation costing more than the rule it names. `02 §7` is ~400 words;
+`02-COMPONENTS.md` is ~2,200, so opening the file to answer one question wastes four fifths of the
 read, every time. The addresses were always section-level — until `rule` existed, retrieval was
 not. `05 §3a`
 

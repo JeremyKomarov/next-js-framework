@@ -4,7 +4,7 @@ Numbered and append-only. Once a decision is locked here, do not re-open it with
 reason — **add a new numbered entry that supersedes the old one instead of editing history.** A
 superseded entry stays in place, marked, so the reasoning that produced it is still readable.
 
-Entries 1–27 are the framework's own, and arrive with every new project. Number 28 onwards are
+Entries 1–31 are the framework's own, and arrive with every new project. Number 32 onwards are
 yours.
 
 Format: `## N. <the decision, stated as a claim>` · `**Locked YYYY-MM-DD.**` · the reasoning,
@@ -612,3 +612,79 @@ building it to "complete" the kit.
 
 The decision is made once, after phase 01 and before the first feature screen, as step 01.9, and
 re-made only when the product changes shape.
+
+## 28. A project ships its own CI, and the framework's CI proves a scaffold passes its own gate
+
+**Locked 2026-10-21.**
+
+#22 and #24 both lean on "CI runs the full guard on every push" — the hook can be skipped, CI
+cannot. But the scaffolder never copied a workflow: a project made in a new directory had no CI at
+all, and one made in place kept the *framework's*, which runs `bin/create.mjs` — deleted by then —
+and `npm run test` with nothing installed, so it failed on the first push. The check that could
+not be skipped did not exist.
+
+> Every scaffolded project gets `.github/workflows/verify.yml`, copied from
+> `.agents/kit/ci/verify.yml`: `npm ci`, then `npm run verify`. After that it is the project's.
+
+The framework's own CI had the matching gap. The README promises a repository where
+`npm run verify` works, and the scaffold job ran with `--skip-install` — so typecheck, lint and
+Vitest never ran against what the scaffolder wrote. A second job now installs a scaffold on Linux
+and runs its `npm run verify`. And `create-next-app` is pinned to the kit's Next version rather
+than `@latest`: it writes the files the scaffolder then rewrites, so an unpinned one changed what a
+scaffold contained with no commit in this repository.
+
+The scaffolder also runs `git init` before installing, unless the target is already inside a
+repository, so `postinstall` has a repository to wire the pre-commit hook into. It was a printed
+manual step, and a printed manual step is the one everyone skips.
+
+## 29. The framework repository has its own root guide; a project's comes from a template
+
+**Locked 2026-10-21.**
+
+The root `AGENTS.md` of this repository *was* the project template, placeholders and all. So every
+agent working on the framework was told "never edit `.agents/` in this project" — the opposite of
+the job here — and told to mark steps in a `plan/` that is a seed, not a plan.
+
+> A project's root guide is `.agents/templates/root-guide.md`; the scaffolder copies it to the
+> project's `AGENTS.md`. The repository's own `AGENTS.md` is the guide for changing the framework.
+
+It lives under `.agents/templates/` so `update:framework` keeps the template current, and it is not
+named `AGENTS.md` there because the guard would then treat it as a directory index wanting a shim.
+
+## 30. Skill frontmatter is held to the keys Claude Code documents, because it ignores the rest
+
+**Locked 2026-10-21.** Corrects the reason for the allowlist given in `05 §4`; #26 stands.
+
+The allowlist was justified as "a key Claude Code does not know makes it drop the whole skill." It
+does not: Claude Code ignores an unrecognised key with no error and loads the skill. And the list
+was too short — `paths`, `user-invocable`, `when_to_use`, `context` and others are documented keys
+it rejected. The guard was right to exist for the wrong reason, and wrong about what to allow.
+
+> Frontmatter keys are the ones Claude Code documents (`FRONTMATTER_KEYS` in `.agents/cli.mjs`).
+> Anything else fails the guard, because Claude Code would ignore it in silence.
+
+The real failure is quieter than a missing skill. `disable_model_invocation: true` — underscores —
+is ignored, so the skill stays model-invocable and looks configured. That is a silent success, and
+it is what the guard now names. When Claude Code documents a new key, add it to the list.
+
+## 31. Two guard blind spots closed: a citation with no document, and a colour that is not hex
+
+**Locked 2026-10-21.**
+
+Both are the same failure #16 names: a check that passes because it never looked.
+
+**Citations.** The guard resolved `NN §N`, so a bare `§N` was invisible to it, and a playbook
+shipped citing a "section 5a" with no document — and no such section anywhere. In a framework file (anything
+under `.agents/`, a directory's `AGENTS.md`, `plan/`, `docs/DECISIONS.md`, and code), a bare `§N`
+now resolves against the document its line names — before it, or as "§N of `NN-NAME.md`" after it —
+or, inside a rulebook file, against that file. One that resolves against nothing fails. A project's
+own prose is left alone: a section mark in a contract or a spec is not a rulebook citation.
+
+**Colours.** #1's rule is "no hardcoded colour", and the guard checked only hex, so `color: white`
+and `rgb(0 0 0)` passed it.
+
+> A literal colour outside `tokens.scss` fails `guard`: a hex, a colour function that does not wrap
+> a `var()`, or a named colour as the value of a colour property.
+
+A colour function over a `var()` is a token being adjusted, not a literal. A named colour counts
+only as a colour property's value, because `tan` and `linen` mean nothing anywhere else.
