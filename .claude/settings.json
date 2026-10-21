@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
       "Bash(node .agents/cli.mjs rule:*)",
@@ -11,6 +12,33 @@
       "Bash(npm run lint)",
       "Bash(npm run test)",
       "Bash(npm test)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/.agents/cli.mjs", "check", "--only=agents", "--hook"],
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/.agents/cli.mjs", "check", "--only=plan", "--hook"],
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }

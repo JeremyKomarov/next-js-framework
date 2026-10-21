@@ -76,7 +76,8 @@ bin/create.mjs     the scaffolder. Deleted from a project once it has run.
 AGENTS.md          in this repository, the guide for working on the framework. A project's root
                    guide is .agents/templates/root-guide.md, which the scaffolder copies in.
 .github/           in this repository, the framework's CI. A project gets its own from the kit.
-.claude/           settings.json (the command allowlist) and the skills mirror
+.claude/           settings.json (the command allowlist, two guard hooks, and in a project a deny
+                   on .agents/) and the skills mirror
 docs/              YOURS — your own DECISIONS.md (empty, numbered from 1) and GLOSSARY.md, seeded
 plan/              YOURS — the table of contents, NOW.md, one small file per phase
 .gitattributes     pins the working tree to LF. The checks compare files byte for byte; keep it.

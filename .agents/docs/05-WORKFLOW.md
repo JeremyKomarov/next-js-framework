@@ -123,6 +123,9 @@ yet**: a guard that fails on an empty project is a guard people delete.
 | the plan index, the phase files and `NOW.md` agree (§2) | `guard`, and a `pre-commit` hook running it per commit — see below |
 | a skill differs between agents, or is missing from one (§4) | `guard` |
 | a `SKILL.md` frontmatter key Claude Code does not recognise, and so silently ignores (§4) | `guard` |
+| a positional `$1` in a playbook — Claude Code counts from `$0`, so it is the second argument (§4) | `guard` |
+| the plan and the skills, during a Claude Code session, not only at commit | `.claude/settings.json` hooks — `check --hook` |
+| an agent editing `.agents/` in a project | a `deny` in the project's `.claude/settings.json`, written by the scaffolder |
 | `npm run verify` itself, on every push | `.github/workflows/verify.yml`, written by the scaffolder |
 | registry invariants the type system cannot state | `features.const.test.ts` |
 
@@ -225,9 +228,16 @@ only works when `allowed-tools` or `disable-model-invocation` is respected is on
 differently. `new-project` is the example — its first line checks it is in the template, because
 Codex will not honour the flag that keeps Claude Code from invoking it.
 
+**A playbook names its arguments.** Claude Code counts `$N` from zero, so `$1` is the *second*
+argument, and it substitutes one anywhere in the body. Declare `arguments: [name]` and write
+`$name`; `guard` fails a bare `$N` (`.agents/docs/DECISIONS.md #37`).
+
 `.claude/settings.json` allows the framework's own read-only and gate commands — `rule`, `guard`,
 `verify` — without a prompt. The lookup protocol runs `rule` constantly, and each prompt is a
-turn. It is shared configuration, not generated: add to it freely.
+turn. It also runs two hooks: `check --only=agents --hook` after every edit, and
+`check --only=plan --hook` when the agent stops. `--hook` turns a failure into exit 2, the one
+code Claude Code shows the agent (`.agents/docs/DECISIONS.md #38`). A project's copy also denies
+`Edit` on `.agents/` and the mirror. It is shared configuration, not generated: add to it freely.
 
 **The platform is not the operator's problem.** Windows, macOS and Linux are all first-class, and
 CI runs the whole suite plus a real scaffold on each — they fail differently, so a green result on

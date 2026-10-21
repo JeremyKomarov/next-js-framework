@@ -2,13 +2,15 @@
 name: new-component
 description: Scaffold a component folder with its styles, class map and strings, and add its row to the directory index. Use when creating any new component in shared/ or a feature.
 argument-hint: [ComponentName] [shared|feature-name]
+arguments: [component, owner]
 ---
 
 # new-component
 
 Enforces `02 §1`–§3.
 
-**Input:** `$1` — PascalCase component name. `$2` — `shared`, or the feature that owns it.
+**Input:** `$component` — PascalCase component name. `$owner` — `shared`, or the feature that
+owns it.
 
 ## Steps
 
@@ -18,13 +20,14 @@ Enforces `02 §1`–§3.
    to that component's enum const and its modifier class map and stop; a near-copy is the bug
    this playbook exists to prevent (`02 §6`). If a *different* feature has
    something close, use the `promote` playbook rather than copying.
-2. **Then decide `shared` or feature, whatever `$2` says.** A primitive — button, field, card,
+2. **Then decide `shared` or feature, whatever `$owner` says.** A primitive — button, field, card,
    modal, table, badge, toast, empty state — goes in `shared/` on first use, with its variants.
    Only something that names an entity or a workflow stays feature-local. Say which you chose and
    why in one line before scaffolding.
-3. Create `<target>/components/$1/` from `.agents/templates/component.md`, renaming `SummaryCard` to `$1`.
+3. Create `<target>/components/$component/` from `.agents/templates/component.md`, renaming
+   `SummaryCard` to `$component`.
    **Four different casings, and a blind find-and-replace gets them wrong** — the template uses a
-   two-word name precisely so they are visibly distinct. For `$1 = InvoiceRow`:
+   two-word name precisely so they are visibly distinct. For `$component = InvoiceRow`:
 
    | Template | Becomes | Used for |
    |---|---|---|
@@ -34,10 +37,10 @@ Enforces `02 §1`–§3.
    | `summary-card` | `invoice-row` | every CSS class, inside the module only |
 
    Files:
-   - `index.tsx`, `$1.module.scss`, `$1.classes.ts` — always
-   - `$1.strings.ts` + `$1.keys.const.ts` — as soon as it renders any text
-   - `$1.const.ts` — only if it has enum-like props
-   - `$1.types.ts` — only if its props are worth naming separately
+   - `index.tsx`, `$component.module.scss`, `$component.classes.ts` — always
+   - `$component.strings.ts` + `$component.keys.const.ts` — as soon as it renders any text
+   - `$component.const.ts` — only if it has enum-like props
+   - `$component.types.ts` — only if its props are worth naming separately
 4. BEM inside the module, tokens only, no hex. **Responsive in the same file**, against the
    breakpoint scale in `02 §8` — fluid first, media query only where the
    layout actually changes. Check 360px, 768px and 1280px before you call it done.

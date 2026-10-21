@@ -136,6 +136,8 @@ The framework's load-bearing ones:
 - **Two agents are supported: Claude Code and Codex** (#26). Codex reads `AGENTS.md` and
   `.agents/skills/` itself; Claude Code gets a `CLAUDE.md` shim per `AGENTS.md` and a
   `.claude/skills` mirror, both written by `sync:agents`.
+- **Claude Code runs the plan and skills guards itself**, through hooks in `.claude/settings.json`,
+  and is denied edits under `.agents/` (#38). A playbook names its arguments (#37).
 
 ## What you must not touch
 

@@ -2,13 +2,14 @@
 name: new-form
 description: Build a form with react-hook-form and zodResolver, sharing its input schema with the Route Handler. Use when adding any form that submits data.
 argument-hint: [form-name]
+arguments: [form]
 ---
 
 # new-form
 
 Enforces `03 §4` and `03 §1`.
 
-**Input:** `$1` — what the form creates or edits.
+**Input:** `$form` — what the form creates or edits.
 
 ## Steps
 
@@ -19,7 +20,7 @@ Enforces `03 §4` and `03 §1`.
    the shared schema rather than restating it.
 2. Wire it up:
    ```tsx
-   const form = useForm({ resolver: zodResolver(Create$1InputSchema) });
+   const form = useForm({ resolver: zodResolver(Create<Form>InputSchema) });
    ```
 3. Compose from the shared `Field` primitives. Never a raw `<input>` with feature-owned styling.
 4. Submit calls the mutation hook from `hooks/`, never a bare `fetch`.

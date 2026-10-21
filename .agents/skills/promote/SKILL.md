@@ -2,6 +2,7 @@
 name: promote
 description: Move a component, hook or data layer from a feature into shared/, rewriting every importer and both index rows. Use when a second feature needs something that lives inside one.
 argument-hint: [path-to-thing]
+arguments: [path]
 ---
 
 # promote
@@ -9,7 +10,7 @@ argument-hint: [path-to-thing]
 Enforces `01 §4` — the promotion rule. This is the single most common cause of
 a duplicated component, because doing it by hand is tedious and copying is not.
 
-**Input:** `$1` — the path to the component, hook or api group to promote.
+**Input:** `$path` — the path to the component, hook or api group to promote.
 
 ## Steps
 

@@ -2,13 +2,14 @@
 name: new-phase
 description: Add a phase to the plan - the phase file and its index row together. Use when breaking down new work or extending the plan.
 argument-hint: [phase-name]
+arguments: [phase]
 ---
 
 # new-phase
 
 Enforces `.agents/docs/05-WORKFLOW.md`.
 
-**Input:** `$1` — a short phase name.
+**Input:** `$phase` — a short phase name.
 
 ## Steps
 

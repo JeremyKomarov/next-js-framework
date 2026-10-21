@@ -2,6 +2,7 @@
 name: sync-index
 description: Check a directory index against what is actually on disk and report or repair the drift. Use during review, or when an index looks stale.
 argument-hint: [directory]
+arguments: [directory]
 ---
 
 # sync-index
@@ -9,11 +10,12 @@ argument-hint: [directory]
 The anti-rot playbook. `guard` can prove an index *exists*; it cannot prove the index is
 still **true**. This is that check. See `05 §3`.
 
-**Input:** `$1` — a directory with an `AGENTS.md`. Omit it to check every one.
+**Input:** `$directory` — a directory with an `AGENTS.md`. Omit it to check every one.
 
 ## Steps
 
-1. Read `$1/AGENTS.md` and list the rows or bullets in its inventory.
+1. Read `$directory/AGENTS.md` — or each `AGENTS.md` in turn, if none was given — and list the
+   rows or bullets in its inventory.
 2. List what is actually on disk in that directory.
 3. Report three kinds of drift, separately:
    - **Missing rows** — a file with no entry. Invisible to the next agent; this is the one that

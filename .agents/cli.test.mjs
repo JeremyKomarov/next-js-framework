@@ -534,6 +534,76 @@ test("agents: a mirror checked out as a plain file fails, and sync repairs it", 
   passes(root, "--only=agents");
 });
 
+// Claude Code counts `$N` from zero, so a playbook written with `$1` as the first argument
+// received the second (.agents/docs/DECISIONS.md #37).
+test("agents: a positional $1 in a skill body fails, and sync will not paper over it", () => {
+  const root = fixture({ ".agents/skills/thing/SKILL.md": SKILL("thing") + "\nCreate `$1/`.\n" });
+  fails(root, "uses $1", "--only=agents");
+  assert.equal(cli(root, "sync").code, 1);
+});
+
+test("agents: named arguments and an escaped dollar pass", () => {
+  const root = fixture({
+    ".agents/skills/thing/SKILL.md": SKILL("thing", "arguments: [target]\n") +
+      "\nCreate `$target/`, then `$ARGUMENTS`. A literal: `awk '{print \\$1}'`.\n",
+  });
+  assert.equal(cli(root, "sync").code, 0);
+  passes(root, "--only=agents");
+});
+
+// Claude Code strips block-level HTML comments from a CLAUDE.md before loading it.
+test("sync: a shim's fallback is text Claude Code loads, not an HTML comment", () => {
+  const root = fixture({ "src/shared/AGENTS.md": "# shared\n" });
+  assert.equal(cli(root, "sync").code, 0);
+  const shim = readFileSync(join(root, "src/shared/CLAUDE.md"), "utf8");
+  assert.match(shim, /^@AGENTS\.md\n/);
+  assert.ok(!shim.includes("<!--"), shim);
+});
+
+// ================================================================ check --hook
+// Run by Claude Code, not a person: exit 2 is the only code that reaches the agent, a pass must
+// print nothing, and a turn the hook already sent back once is let go (.agents/docs/DECISIONS.md #38).
+function hookRun(root, input, ...args) {
+  try {
+    const stdout = execFileSync(process.execPath, [join(root, ".agents/cli.mjs"), "check", ...args, "--hook"],
+      { cwd: root, encoding: "utf8", input: JSON.stringify(input), stdio: ["pipe", "pipe", "pipe"] });
+    return { code: 0, all: stdout };
+  } catch (e) {
+    return { code: e.status ?? 1, all: (e.stdout ?? "") + (e.stderr ?? "") };
+  }
+}
+
+const DRIFTED_PLAN = { "plan/00-INDEX.md": PLAN_INDEX("in progress"), "plan/01-foundation.md": PHASE("in progress") };
+
+test("check --hook: a failure exits 2 and names the problem", () => {
+  const r = hookRun(fixture(DRIFTED_PLAN), { hook_event_name: "Stop" }, "--only=plan");
+  assert.equal(r.code, 2, r.all);
+  assert.ok(r.all.includes("no step is marked [~]"), r.all);
+});
+
+test("check --hook: a pass exits 0 and prints nothing", () => {
+  const r = hookRun(fixture(), { hook_event_name: "Stop" }, "--only=plan");
+  assert.equal(r.code, 0, r.all);
+  assert.equal(r.all, "");
+});
+
+test("check --hook: a Stop already sent back once is let go", () => {
+  const r = hookRun(fixture(DRIFTED_PLAN), { hook_event_name: "Stop", stop_hook_active: true }, "--only=plan");
+  assert.equal(r.code, 0, r.all);
+});
+
+test("the framework's Claude Code hooks run checks that exist, in hook mode", () => {
+  const settings = JSON.parse(readFileSync(join(FRAMEWORK, "../.claude/settings.json"), "utf8"));
+  const runs = Object.values(settings.hooks ?? {}).flat().flatMap((g) => g.hooks)
+    .filter((h) => h.args?.some((a) => a.endsWith("/.agents/cli.mjs")));
+  assert.deepEqual(runs.map((h) => h.args.find((a) => a.startsWith("--only="))).sort(),
+    ["--only=agents", "--only=plan"]);
+  for (const h of runs) {
+    assert.equal(h.command, "node");
+    assert.ok(h.args.includes("--hook"), `${h.args.join(" ")} must pass --hook, or a failure exits 1 and the agent never sees it`);
+  }
+});
+
 // ====================================================================== command: hooks
 // hooksCmd() itself, plus proof the installed hook actually stops a commit — the guard passing
 // is not evidence git ever runs it (.agents/docs/DECISIONS.md #24).

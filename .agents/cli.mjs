@@ -4,6 +4,7 @@
 //
 //   node .agents/cli.mjs rule [NN] [N]                            npm run rule
 //   node .agents/cli.mjs check [--only=plan,docs,styles,agents]   npm run guard
+//   node .agents/cli.mjs check --only=… --hook                    Claude Code's hooks, settings.json
 //   node .agents/cli.mjs sync                                     npm run sync:agents
 //   node .agents/cli.mjs update [path-or-url] [--no-branch]       npm run update:framework
 //   node .agents/cli.mjs hooks                                    npm run hooks (also postinstall)
@@ -89,10 +90,12 @@ const canonicalDir = join(ROOT, CANONICAL);
 // Claude Code reads only .claude/skills/, so that one path gets a mirror. 05-WORKFLOW.md §4.
 const MIRROR = ".claude/skills";
 // Written by `sync` beside every AGENTS.md, never by hand. A shim holds no rules of its own.
+// The fallback is plain text, not an HTML comment: Claude Code strips block-level comments from a
+// CLAUDE.md before loading it, so a fallback written as one never reached the agent it was for.
 const SHIM = `@AGENTS.md
 
-<!-- If the import above did not expand, read ./AGENTS.md in this directory now, and the
-     AGENTS.md of any directory you are about to write in. This file holds no rules of its own. -->
+This file holds no rules of its own. If AGENTS.md did not load above, read ./AGENTS.md now, and
+the AGENTS.md of any directory you are about to write in.
 `;
 // Skill keys: the frontmatter Claude Code documents. `name` and `description` are the two both
 // agents read; Codex ignores the rest. Claude Code ignores a key it does not recognise, with no
@@ -114,10 +117,12 @@ function skills() {
   return readdirSync(canonicalDir, { withFileTypes: true })
     .filter((e) => e.isDirectory() && existsSync(join(canonicalDir, e.name, "SKILL.md")))
     .map((e) => {
-      const frontmatter = read(join(canonicalDir, e.name, "SKILL.md")).match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
+      const text = read(join(canonicalDir, e.name, "SKILL.md"));
+      const frontmatter = text.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
       return {
         name: e.name,
         frontmatter,
+        body: text.replace(/^---\n[\s\S]*?\n---/, ""),
         description: frontmatter.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? "",
         keys: [...frontmatter.matchAll(/^([A-Za-z][\w-]*):/gm)].map((m) => m[1]),
       };
@@ -641,6 +646,14 @@ function checkAgents(fail, fix) {
            `key with no error, so whatever it was meant to do silently does not happen. Check the ` +
            `spelling (hyphens, not underscores). Allowed: ${[...FRONTMATTER_KEYS].join(", ")}`, true);
     }
+    // Claude Code counts `$N` from zero — `$1` is the *second* argument — and substitutes it
+    // anywhere in the body, code included. Written as the first, it quietly received the second:
+    // `/new-component InvoiceRow shared` built `components/shared/` (.agents/docs/DECISIONS.md #37).
+    const positional = [...new Set(s.body.match(/(?<!\\)\$\d+/g) ?? [])];
+    if (positional.length)
+      fail(`${where}  uses ${positional.join(", ")} — Claude Code counts arguments from $0, so ` +
+           `$1 is the second one. Name them in \`arguments:\` and write $name, or escape a ` +
+           `literal dollar as \\$`, true);
   }
 
   // -- the mirror. Codex reads .agents/skills/ itself; Claude Code reads only .claude/skills/.
@@ -745,6 +758,18 @@ function check() {
   const names = only ? only.split(",").filter(Boolean) : Object.keys(CHECKS);
   for (const n of names) if (!CHECKS[n]) { console.error(`cli: no such check "${n}". Known: ${Object.keys(CHECKS).join(", ")}`); process.exit(2); }
 
+  // --hook: run by Claude Code (.claude/settings.json), not by a person. Exit 2 is the code that
+  // reaches the agent — it blocks a Stop and shows a PostToolUse the problem; exit 1 shows nothing.
+  // A pass prints nothing, and a turn already sent back once by this hook is let go: the pre-commit
+  // hook and CI still hold the line, and a hook that loops gets deleted.
+  // .agents/docs/DECISIONS.md #38.
+  const hook = option("hook") !== null;
+  if (hook) {
+    let input = {};
+    try { if (!process.stdin.isTTY) input = JSON.parse(readFileSync(0, "utf8") || "{}"); } catch { /* no input is a run */ }
+    if (input.stop_hook_active) return;
+  }
+
   const failures = [];
   const notes = [];
   for (const name of names) {
@@ -757,8 +782,9 @@ function check() {
     console.error(`GUARD FAILED — ${failures.length} problem(s):\n`);
     for (const f of failures) console.error(f);
     console.error(`\nThe rules are in .agents/docs/. Skills: edit ${CANONICAL}/, then npm run sync:agents.`);
-    process.exit(1);
+    process.exit(hook ? 2 : 1);
   }
+  if (hook) return;
   console.log("guard: clean");
   for (const n of notes) console.log(n);
 }
@@ -994,6 +1020,7 @@ switch (cmd) {
 
   rule [NN] [N] [-q term]                 npm run rule       — read one section, not a file
   check [--only plan,docs,styles,agents]  npm run guard
+        [--hook]                          as a Claude Code hook: exit 2 on failure, silent on a pass
   sync                                   npm run sync:agents — the Claude Code mirror and shims
   update [path-or-url] [--no-branch]      npm run update:framework
   hooks                                   npm run hooks       — wires the pre-commit plan check`);

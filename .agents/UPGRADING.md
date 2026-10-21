@@ -10,6 +10,29 @@ cannot see, a convention that changed meaning, a file your project must now writ
 
 Format: `## <version> — <date>`, then **Do:** lines, or "Nothing — `npm run verify` covers it."
 
+## 3.1.0 — 2026-10-21
+
+Nine playbooks read their arguments one place late in Claude Code, which counts `$N` from zero:
+`/new-component InvoiceRow shared` built `components/shared/`. They name their arguments now, and
+the guard fails a bare `$N` (`.agents/docs/DECISIONS.md` #37). Claude Code now runs two guards
+itself, through hooks, and a project's settings refuse edits to `.agents/` (#38). Settings and
+shims live outside `.agents/`, so `update` cannot write them; the steps below are by hand.
+
+**Do:**
+
+- **`.claude/settings.json`: add the `$schema` line and the `hooks` block** from the framework's
+  copy. They run `check --only=agents --hook` after each edit and `check --only=plan --hook` when
+  the agent stops. Keep your own `allow` entries.
+- **Add a `deny` to its `permissions`:** `["Edit(/.agents/**)", "Edit(/.claude/skills/**)"]`.
+  `update` and `sync` write through node and are not affected.
+- **Replace every `CLAUDE.md` that is still the stock shim:** delete it and run
+  `npm run sync:agents`. The old fallback line was an HTML comment, and Claude Code strips those
+  before loading. A shim you added imports to: replace just the comment with the two lines in
+  `SHIM` in `.agents/cli.mjs`.
+- **A playbook of your own that uses `$1`, `$2`** now fails `npm run verify`. Name the arguments
+  (`arguments: [name]`, then `$name`), or escape a literal dollar as `\$1`.
+- **`/update-framework`** has to be typed now. Claude Code no longer starts it on its own.
+
 ## 3.0.0 — 2026-10-21
 
 Breaking: the framework's decisions moved to `.agents/docs/DECISIONS.md`, and `docs/DECISIONS.md`

@@ -422,6 +422,15 @@ step("AGENTS.md filled in");
 // it runs again on every change, so the wiring has exactly one implementation and a scaffolded
 // project cannot start out differently from a synced one.
 run(process.execPath, [join(root, ".agents/cli.mjs"), "sync"], root);
+
+// "Never edit .agents/ in a project" is advice in the guide; this makes it a refusal. The deny is
+// written here, not shipped: the framework's own copy of settings.json is where .agents/ IS the
+// thing being edited. `update` and `sync` write through node, which a deny on Edit does not touch.
+// .agents/docs/DECISIONS.md #38.
+const settingsPath = join(root, ".claude/settings.json");
+const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+settings.permissions = { ...settings.permissions, deny: ["Edit(/.agents/**)", "Edit(/.claude/skills/**)"] };
+writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
 step("Claude Code and Codex wired");
 
 // 8. the project's own README replaces the framework's

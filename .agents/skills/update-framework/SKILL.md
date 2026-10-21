@@ -2,20 +2,26 @@
 name: update-framework
 description: Pull a newer version of the framework into this project, safely - on a branch, only under .agents/, with the guards as the migration. Use when the framework has improved since this project started.
 argument-hint: [path-or-git-url]
+disable-model-invocation: true
+arguments: [source]
 ---
 
 # update-framework
 
 Enforces `05 §6`.
 
-**Input:** `$1` — the framework's path or git URL. Optional after the first run; it is recorded in
-`.agents/version.json`.
+**Input:** `$source` — the framework's path or git URL. Optional after the first run; it is
+recorded in `.agents/version.json`.
+
+**Run this only when the person asks for a framework update** — it switches branches and rewrites
+`.agents/`. Claude Code will not start it on its own (`disable-model-invocation`); Codex does not
+honour that flag, so this line is what holds it there.
 
 ## Steps
 
 1. **Commit or stash first.** The script refuses a dirty tree, and it is right to: the diff must be
    the update and nothing else.
-2. `npm run update:framework -- $1`. It branches, copies only under `.agents/`, and stops. Read
+2. `npm run update:framework -- $source`. It branches, copies only under `.agents/`, and stops. Read
    what it prints — the upgrade notes are the part no guard can tell you.
 3. `npm run verify`. **Expect failures, and read them as the migration.** Each one names the file
    and the section that changed. Fix the project code, not the rule.

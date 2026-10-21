@@ -836,3 +836,57 @@ nothing had run that combination until somebody's project did.
 Exact, not merely narrower, because a range is a promise the framework cannot test — and it is
 what `create-next-app` itself writes. A project moves on from the pinned set the usual way, under
 its own lockfile; transitive dependencies still float until its first `npm install` writes one.
+
+## 37. A playbook names its arguments; a positional `$N` fails the guard
+
+**Locked 2026-10-21.**
+
+Claude Code counts skill arguments from zero — `$0` is the first, `$1` the second — and substitutes
+them anywhere in the body, code blocks included. Nine playbooks were written as if `$1` were the
+first. Every one of them received the wrong value without a word: `/new-component InvoiceRow
+shared` read `$1` as `shared` and `$2` as nothing, so it built `components/shared/`.
+
+> A playbook that takes input declares it in `arguments:` and writes `$name` in its body. `guard`'s
+> agents check fails a body holding a bare `$N`, and `sync:agents` will not mirror over it. A
+> literal dollar is escaped, `\$1`.
+
+Named, not renumbered to `$0`: a name reads the same in both agents. Codex substitutes nothing, so
+it sees `$component` beside a line saying what that is, which is what it saw for `$1` before. A
+renumbered `$0` would have read as a typo there and stayed one wrong digit away from the bug.
+Placeholders are kept clear of identifier characters — `Create<Form>InputSchema`, not
+`Create$formInputSchema` — because a name glued to letters is a different name.
+
+`update-framework` is also gated now (`disable-model-invocation: true`): it switches branches and
+rewrites `.agents/`, which is what the flag is for. Its body says so too, because Codex ignores the
+flag (#26, `05 §4`).
+
+## 38. Claude Code's own enforcement: two hooks, a deny on `.agents/`, a shim it can read
+
+**Locked 2026-10-21.**
+
+The guards ran at commit and in CI; inside a Claude Code session they ran only when the agent
+remembered to. Claude Code documents hooks for exactly this — what must happen every time — and
+permission rules for what must never happen. The rulebook said both things in prose.
+
+> `.claude/settings.json` runs two hooks. After an `Edit` or `Write`, `check --only=agents`; when the
+> agent stops, `check --only=plan`. Both pass `--hook`, which makes a failure exit 2 — the only
+> code Claude Code shows the agent — and a pass print nothing. A Stop the hook already sent back
+> once is let go; the pre-commit hook and CI still hold the line.
+>
+> A scaffolded project's settings deny `Edit(/.agents/**)` and `Edit(/.claude/skills/**)`. The
+> scaffolder writes the deny, because the framework's own copy is where `.agents/` is edited.
+
+Only those two checks. `plan` is what drifts inside one session and costs most to rebuild later
+(#24). `agents` is what a single edit can break — a canonical skill edited where the mirror is a
+copy. `docs` and `styles` fire on half-finished work, and a check that fires on correct work gets
+deleted (#22). The hooks run `node` with the script path as an argument, not a shell line: that
+is what works on Windows whether Claude Code reaches it through Git Bash or PowerShell.
+
+The deny stops the agent's file tools, not `update` or `sync`, which write through node. So the
+framework still updates itself, and an agent asked to edit `.agents/` in a project gets a refusal
+in place of a change the next update would quietly undo.
+
+The `CLAUDE.md` shim's fallback line was an HTML comment, and Claude Code strips those from a
+`CLAUDE.md` before loading it. So the one case it was written for, an import that did not
+expand, was the one case in which nothing showed it. It is plain text now. Existing shims are
+never overwritten (#14), so a project replaces its own.
