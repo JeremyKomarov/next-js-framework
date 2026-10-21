@@ -110,8 +110,10 @@ a playbook already does it.
 
 ## Decisions already made — do not re-open without a reason
 
-Full record: [`docs/DECISIONS.md`](docs/DECISIONS.md), numbered and append-only. Entries 1–31 are
-the framework's. The load-bearing ones:
+The framework's are [`.agents/docs/DECISIONS.md`](.agents/docs/DECISIONS.md) — numbered,
+append-only, and updated with the framework; the `#N` below are its entries. This project's own
+are [`docs/DECISIONS.md`](docs/DECISIONS.md), numbered separately. Cite either by file and number.
+The framework's load-bearing ones:
 
 - **SCSS Modules + BEM + tokens** (#1, #2). No Tailwind, no literal colour — hex, `rgb()`, named —
   outside `tokens.scss`.

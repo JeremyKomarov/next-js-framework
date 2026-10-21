@@ -130,8 +130,9 @@ export const GET = handlingApiErrors(ROUTE, async () => {
 });
 ```
 
-Middleware redirects signed-out browsers, but **middleware is not the security boundary** — a
-handler that skips the check is unprotected regardless.
+The proxy — `src/proxy.ts`, which Next 16 renamed from `middleware.ts` — redirects signed-out
+browsers, but **the proxy is not the security boundary**: a handler that skips the check is
+unprotected regardless.
 
 **Nothing reaches the browser.** Every file under `server/` starts with `import "server-only"`,
 and ESLint blocks `@/server/**` from `features/`, `shared/`, `core/` and `store/`. Two mechanisms,

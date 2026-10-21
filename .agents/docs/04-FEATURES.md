@@ -46,7 +46,7 @@ guard, or an env var read in more than one place. Use the `enable-feature` playb
 to flip a flag whose screen is not actually built.
 
 This is one global switch. If per-account overrides are ever needed, that is a database read
-inside `isFeatureEnabled()` — **not a second flag system.** Record it in `DECISIONS.md` first.
+inside `isFeatureEnabled()` — **not a second flag system.** Record it in `docs/DECISIONS.md` first.
 
 ## 3. Every feature ships its own `AGENTS.md`
 

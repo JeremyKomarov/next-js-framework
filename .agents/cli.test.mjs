@@ -2,8 +2,9 @@
 //
 //   node --test .agents/            npm test
 //
-// DECISIONS.md #16: "A guard that passes because it scanned nothing is worse than no guard. When
-// a glob's root moves, prove the guard still fails on a real break before believing it passes."
+// .agents/docs/DECISIONS.md #16: "A guard that passes because it scanned nothing is worse than no
+// guard. When a glob's root moves, prove the guard still fails on a real break before believing
+// it passes."
 // That was written after a refactor silently removed the whole rulebook from every check and all
 // four printed "clean". Until this file existed the proof was a person running it by hand once.
 //
@@ -41,14 +42,19 @@ const NOW = (step = "—", extra = "**Since:** —\n**State:** nothing in flight
 const SKILL = (name, frontmatter = "") =>
   `---\nname: ${name}\ndescription: Does ${name}. Use when you need ${name}.\n${frontmatter}---\n\n# ${name}\n`;
 
-/** A project the guard is happy with, that each test then breaks in exactly one place. */
+/** A project the guard is happy with, that each test then breaks in exactly one place. It holds
+ *  every framework file the rulebook names, because a real project always does — except the
+ *  playbooks: an empty skills directory beside an empty mirror is a project in sync with none,
+ *  and each skills test adds the one it needs. */
 function project(files = {}) {
   const root = mkdtempSync(join(tmpdir(), "guard-test-"));
   // package.json is what projectRoot() locks onto — without it the CLI walks out of the fixture.
   write(root, "package.json", `{ "name": "fixture", "private": true }\n`);
   mkdirSync(join(root, ".agents"), { recursive: true });
-  cpSync(join(FRAMEWORK, "cli.mjs"), join(root, ".agents/cli.mjs"));
-  cpSync(join(FRAMEWORK, "docs"), join(root, ".agents/docs"), { recursive: true });
+  for (const part of ["cli.mjs", "docs", "kit", "templates", "version.json", "UPGRADING.md"])
+    cpSync(join(FRAMEWORK, part), join(root, ".agents", part), { recursive: true });
+  mkdirSync(join(root, ".agents/skills"));
+  mkdirSync(join(root, ".claude/skills"), { recursive: true });
 
   write(root, "plan/00-INDEX.md", PLAN_INDEX());
   write(root, "plan/01-foundation.md", PHASE());
@@ -57,8 +63,9 @@ function project(files = {}) {
   write(root, "CLAUDE.md", "@AGENTS.md\n");
 
   for (const [path, body] of Object.entries(files)) {
-    if (body === null) rmSync(join(root, path), { recursive: true, force: true });
-    else write(root, path, body);
+    // Replaced, never written over: a test may put a file where the fixture has a directory.
+    rmSync(join(root, path), { recursive: true, force: true });
+    if (body !== null) write(root, path, body);
   }
   return root;
 }
@@ -210,7 +217,7 @@ test("docs: a valid citation in any file type passes", () => {
 });
 
 // The bug this was written for: a playbook cited "(§5a)" — no document, and no such section in
-// any of them — and the full-citation check could not see it (DECISIONS.md #31).
+// any of them — and the full-citation check could not see it (.agents/docs/DECISIONS.md #31).
 test("docs: a § with no document named fails in a framework file", () => {
   fails(fixture({ ".agents/skills/thing/SKILL.md": SKILL("thing") + "\nRelease it upstream (§5a).\n" }),
     "§5a names no document", "--only=docs");
@@ -255,6 +262,80 @@ test("docs: a root AGENTS.md too large for Codex to read whole fails", () => {
   fails(fixture({ "AGENTS.md": "# fixture\n\n" + "word ".repeat(6000) }), "Codex starts cutting", "--only=docs");
 });
 
+// The routing table in 00-INDEX.md cites every section as `rule NN N`, with no § for the
+// citation checks to see — renumbering one left the table pointing at the wrong rule, clean.
+test("docs: a `rule NN N` citation to a section or document that does not exist fails", () => {
+  fails(fixture({ "AGENTS.md": "# fixture\n\nFetch `rule 02 99` first.\n" }),
+    "cites 02-COMPONENTS.md §99, which has no such section", "--only=docs");
+  fails(fixture({ "AGENTS.md": "# fixture\n\nRun node .agents/cli.mjs rule 07 1.\n" }),
+    "cites docs/07-*.md, which does not exist", "--only=docs");
+  // The continuation of a list of them, in a framework file.
+  fails(fixture({ ".agents/skills/thing/SKILL.md": SKILL("thing") + "\nSee `rule 02 7`, `02 99`.\n" }),
+    "cites 02-COMPONENTS.md §99", "--only=docs");
+});
+
+test("docs: every form of `rule` citation passes, and prose about another rule is left alone", () => {
+  passes(fixture({
+    "AGENTS.md": "# fixture\n\n`node .agents/cli.mjs rule 02 7`, `npm run rule -- 05 2`, `rule 02`,\n" +
+                 "`rule 03 2`, `03 3`, `03 4`, and `rule 02 §7`.\n",
+    "src/legal/lease.md": "Under rule 12 3 of the lease, clause `12 3` applies.\n",
+  }), "--only=docs");
+});
+
+// Three playbooks shipped telling the agent to copy from `.agents/templates/api/`,
+// `component/` and `INDEX.feature.md` — none of which ever existed — and nothing could see it.
+test("docs: a framework path a playbook names that does not exist fails", () => {
+  fails(fixture({ ".agents/skills/thing/SKILL.md": SKILL("thing") + "\nCopy it from `.agents/templates/api/`.\n" }),
+    "names .agents/templates/api/, which does not exist", "--only=docs");
+});
+
+// existsSync says yes to this on macOS and Windows, and Linux says no — the guard must not
+// depend on which one CI happened to run.
+test("docs: a framework path that is right only in a case-insensitive filesystem fails", () => {
+  fails(fixture({ "src/shared/AGENTS.md": "# shared\n\nShape: `.agents/templates/INDEX.md`.\n",
+                  "src/shared/CLAUDE.md": "@AGENTS.md\n" }),
+    "names .agents/templates/INDEX.md, which does not exist", "--only=docs");
+});
+
+test("docs: real framework paths, placeholders and a full stop pass, and DECISIONS.md is history", () => {
+  passes(fixture({
+    "AGENTS.md": "# fixture\n\nCopy `.agents/templates/api.md`, read `.agents/skills/<name>/SKILL.md`\n" +
+                 "and `.agents/kit/hooks`, then `.agents/skills/$1/`. Shape: .agents/templates/index.md.\n",
+    "docs/DECISIONS.md": "## 1. Moved\n\nThe templates once lived in `.agents/old/`.\n",
+  }), "--only=docs");
+});
+
+// The framework's decisions and a project's used to share one number sequence, so the rulebook's
+// #26 was, in a project that had numbered its own from 26, that project's own reasoning.
+test("docs: a decision citation that does not resolve fails, naming where a moved one went", () => {
+  fails(fixture({ "AGENTS.md": "# fixture\n\nWhy: `.agents/docs/DECISIONS.md #999`.\n" }),
+    "cites .agents/docs/DECISIONS.md #999, which has no such entry", "--only=docs");
+  fails(fixture({ "AGENTS.md": "# fixture\n\nWhy: `docs/DECISIONS.md #1`.\n" }),
+    "cites docs/DECISIONS.md, which does not exist", "--only=docs");
+  // A project's code still citing a framework entry at its old address, after the migration.
+  fails(fixture({ "docs/DECISIONS.md": "# Decisions\n\n## 32. Ours\n",
+                  "src/thing.ts": "// the guard is tested (docs/DECISIONS.md #22)\n" }),
+    "that is .agents/docs/DECISIONS.md #22 now", "--only=docs");
+});
+
+test("docs: a bare DECISIONS.md #N fails in a framework file, and is prose elsewhere", () => {
+  fails(fixture({ "AGENTS.md": "# fixture\n\nSee DECISIONS.md #3 for why.\n" }),
+    "names neither record", "--only=docs");
+  passes(fixture({
+    "src/legal/vendor.md": "Their DECISIONS.md #3 covers it.\n",
+    "AGENTS.md": "# fixture\n\nThe vendor's `vendor/DECISIONS.md #3` is not ours.\n",
+  }), "--only=docs");
+});
+
+test("docs: decision citations that resolve pass, lists too, and a record's own text is history", () => {
+  passes(fixture({
+    "docs/DECISIONS.md": "# Decisions\n\n## 1. Ours\n\nOnce cited `docs/DECISIONS.md #99` and " +
+                         "`.agents/templates/gone/`, and DECISIONS.md #7.\n",
+    "AGENTS.md": "# fixture\n\n(`.agents/docs/DECISIONS.md` #19, #22), and ours: `docs/DECISIONS.md #1`.\n",
+    "src/thing.ts": "// .agents/docs/DECISIONS.md #28 and #29\n",
+  }), "--only=docs");
+});
+
 // =================================================================== check: styles
 test("styles: a hardcoded colour outside tokens.scss fails", () => {
   fails(fixture({ "src/shared/Button.module.scss": ".button { color: #ff0000; }\n" }),
@@ -279,7 +360,8 @@ test("styles: url(#id), var() and block comments are not colours", () => {
   }), "--only=styles");
 });
 
-// Hex was the only spelling the check knew; these broke the same rule and passed (DECISIONS.md #31).
+// Hex was the only spelling the check knew; these broke the same rule and passed
+// (.agents/docs/DECISIONS.md #31).
 test("styles: a colour function outside tokens.scss fails", () => {
   fails(fixture({ "src/shared/Button.module.scss": ".button {\n  background: rgb(0 0 0 / 50%);\n}\n" }),
     "hardcoded colour rgb", "--only=styles");
@@ -321,9 +403,86 @@ test("styles: a class map matching its stylesheet, including BEM parts, passes",
   }), "--only=styles");
 });
 
+// Regression: only `&__el` and `&--mod` one level under a top-level block were understood, so
+// the nesting 02 §7 calls preferred failed on a stylesheet that was correct.
+test("styles: nested BEM at any depth, &-suffixes, and compound or grouped selectors pass", () => {
+  passes(fixture({
+    "src/shared/Card/Card.module.scss": `.card {
+  display: block;
+  &__row {
+    display: grid;
+    &--active { opacity: 1; }
+    @media (min-width: 42rem) { &--wide { gap: var(--space-4); } }
+  }
+  &-icon { width: 1rem; } // a trailing comment { with a brace }
+  .card__title,
+  &.is-open { color: var(--text-primary); }
+}
+`,
+    "src/shared/Card/Card.classes.ts": `import styles from "./Card.module.scss";
+export const c = {
+  root: styles["card"], row: styles["card__row"], active: styles["card__row--active"],
+  wide: styles["card__row--wide"], icon: styles["card-icon"], title: styles["card__title"],
+  open: styles["is-open"],
+};
+`,
+  }), "--only=styles");
+});
+
+// The old check paired every top-level block with every `&__x` in the file, so a class that
+// exists only under another block passed.
+test("styles: a class map naming an element of the wrong block fails", () => {
+  fails(fixture({
+    "src/shared/Card/Card.module.scss": ".card { display: block; }\n.panel {\n  &__row { display: grid; }\n}\n",
+    "src/shared/Card/Card.classes.ts":
+      `import styles from "./Card.module.scss";\nexport const c = { row: styles["card__row"] };\n`,
+  }), `"card__row" is not a class in`, "--only=styles");
+});
+
+// Regression: `#add-button` is an id whose name is hex digits, and it failed as the colour #add.
+test("styles: an id spelled in hex digits is a selector, not a colour", () => {
+  passes(fixture({
+    "src/shared/Bar.module.scss": "#add-button {\n  color: var(--text-primary);\n}\n" +
+                                  "#feed,\n#cafe { opacity: 1; }\n.bar:hover #bad { opacity: 1; }\n",
+  }), "--only=styles");
+});
+
+// What blanking the selectors must not cost: a colour on a line of its own inside a multi-line
+// value, and one written before a nested block on the same line.
+test("styles: a colour inside a multi-line value, or before a nested block, still fails", () => {
+  fails(fixture({ "src/shared/Bar.module.scss":
+    ".bar {\n  background: linear-gradient(\n    var(--surface-card),\n    #fafafa\n  );\n}\n" }),
+    "Bar.module.scss:4  hardcoded colour #fafafa", "--only=styles");
+  fails(fixture({ "src/shared/Bar.module.scss": ".bar { color: #fff; &:hover { opacity: 1; } }\n" }),
+    "hardcoded colour #fff", "--only=styles");
+});
+
+test("styles: a brace inside a string and @at-root do not confuse the class map check", () => {
+  passes(fixture({
+    "src/shared/Card/Card.module.scss": `.card {
+  &::before { content: "{"; }
+  &__row { display: grid; }
+  @at-root .card-portal { position: fixed; }
+}
+`,
+    "src/shared/Card/Card.classes.ts": `import styles from "./Card.module.scss";
+export const c = { row: styles["card__row"], portal: styles["card-portal"] };
+`,
+  }), "--only=styles");
+});
+
+// Regression: only a whole-line comment was prose, so a note beside a token failed.
+test("styles: a hex in a trailing comment is prose, and one before the comment is not", () => {
+  passes(fixture({
+    "src/shared/Button.module.scss": ".button {\n  color: var(--text-primary); // was #ff0000\n}\n",
+  }), "--only=styles");
+  fails(fixture({ "src/shared/Button.module.scss": ".button {\n  color: #ff0000; // red\n}\n" }),
+    "hardcoded colour #ff0000", "--only=styles");
+});
+
 // =================================================================== check: agents
 // Claude Code ignores a key it does not recognise, so a misspelling silently undoes what the key
-// was for — this one would leave the skill model-invocable (DECISIONS.md #30).
+// was for — this one would leave the skill model-invocable (.agents/docs/DECISIONS.md #30).
 test("agents: a frontmatter key Claude Code does not recognise fails", () => {
   const root = fixture({ ".agents/skills/thing/SKILL.md": SKILL("thing", "disable_model_invocation: true\n") });
   fails(root, "is not one Claude Code recognises", "--only=agents");
@@ -344,7 +503,7 @@ test("agents: a skill with no description fails", () => {
 });
 
 test("agents: a missing Claude Code mirror fails, and sync repairs it idempotently", () => {
-  const root = fixture({ ".agents/skills/thing/SKILL.md": SKILL("thing") });
+  const root = fixture({ ".agents/skills/thing/SKILL.md": SKILL("thing"), ".claude/skills": null });
   fails(root, ".claude/skills  missing", "--only=agents");
 
   assert.equal(cli(root, "sync").code, 0);
@@ -377,7 +536,7 @@ test("agents: a mirror checked out as a plain file fails, and sync repairs it", 
 
 // ====================================================================== command: hooks
 // hooksCmd() itself, plus proof the installed hook actually stops a commit — the guard passing
-// is not evidence git ever runs it (DECISIONS.md #24).
+// is not evidence git ever runs it (.agents/docs/DECISIONS.md #24).
 function gitCmd(root, ...args) {
   try {
     const out = execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -387,12 +546,10 @@ function gitCmd(root, ...args) {
   }
 }
 
-/** The fixture has no .git of its own (project() predates git entirely) — this adds one, with the
- *  framework's hooks/ copied in, since only cli.mjs and docs/ are copied by default. */
+/** The fixture has no .git of its own (project() predates git entirely) — this adds one. */
 function gitFixture(files) {
   const root = fixture(files);
   assert.equal(gitCmd(root, "init").code, 0);
-  cpSync(join(FRAMEWORK, "kit/hooks"), join(root, ".agents/kit/hooks"), { recursive: true });
   return root;
 }
 
@@ -400,14 +557,13 @@ const commit = (root, message) => gitCmd(root, "-c", "user.email=t@t.com", "-c",
 
 test("hooks: no .git — installs nothing and says so, rather than failing", () => {
   const root = fixture({});
-  cpSync(join(FRAMEWORK, "kit/hooks"), join(root, ".agents/kit/hooks"), { recursive: true });
   const r = cli(root, "hooks");
   assert.equal(r.code, 0);
   assert.match(r.all, /not a git repository/);
 });
 
 test("hooks: no .agents/kit/hooks/ — installs nothing and says so", () => {
-  const root = fixture({});
+  const root = fixture({ ".agents/kit/hooks": null });
   assert.equal(gitCmd(root, "init").code, 0);
   const r = cli(root, "hooks");
   assert.equal(r.code, 0);
@@ -464,6 +620,21 @@ test("rule: accepts '02 §7' as one argument, and -q searches", () => {
   assert.match(q.out, /02 §8/);
 });
 
+// A bare -q used to print the whole map, which reads as a search that matched everything.
+test("rule: -q with no term exits non-zero, and a document narrows a search", () => {
+  const root = fixture();
+  const bare = cli(root, "rule", "-q");
+  assert.equal(bare.code, 2, bare.all);
+  assert.match(bare.all, /needs a term/);
+
+  for (const args of [["02", "-q", "tokens"], ["--q=tokens", "02"]]) {
+    const r = cli(root, "rule", ...args);
+    assert.equal(r.code, 0, r.all);
+    assert.match(r.out, /02 §7/, `rule ${args.join(" ")}`);
+    assert.ok(!/\b0[1345] §/.test(r.out), `rule ${args.join(" ")} must search 02 alone:\n${r.out}`);
+  }
+});
+
 test("rule: an address that does not resolve exits non-zero and says what does", () => {
   const root = fixture();
   const badDoc = cli(root, "rule", "99");
@@ -507,6 +678,9 @@ function frameworkSource() {
   write(src, ".agents/version.json", json({ version: "9.0.0", skills: ["added", "kept"] }));
   write(src, ".agents/UPGRADING.md", "# Upgrading\n\n## 9.0.0 — 2026-10-21\n\n**Do:** the new thing.\n\n" +
                                      "## 1.0.0 — 2026-09-05\n\nFirst version.\n");
+  write(src, ".agents/docs/DECISIONS.md", "# Decisions — the framework's\n\n## 1. A new reason\n");
+  write(src, ".agents/NEW.md", "A file this release adds.\n");
+  write(src, ".agents/cli.test.mjs", "// the framework's own tests\n");
   return src;
 }
 
@@ -518,6 +692,7 @@ function projectOnOldVersion() {
     ".agents/skills/mine/SKILL.md": SKILL("mine"),
     ".agents/docs/06-OLD.md": "# Old\n\n## 1. Gone\n\nRemoved upstream.\n",
     ".agents/version.json": json({ version: "1.0.0", skills: ["dropped", "kept"] }),
+    "docs/DECISIONS.md": "# Decisions\n\n## 26. Our own\n",
     "src/app.ts": "export {};\n",
   });
   assert.equal(gitCmd(root, "init").code, 0);
@@ -540,6 +715,12 @@ test("update: replaces the framework's files, keeps the project's, touches nothi
   assert.ok(has(".agents/skills/added/SKILL.md"), "a playbook the framework added must arrive");
   assert.match(readFileSync(join(root, ".agents/skills/kept/SKILL.md"), "utf8"), /version two/);
   assert.ok(!has(".agents/docs/06-OLD.md"), "docs/ is mirrored — a rulebook file removed upstream goes");
+  // A file the release adds arrives on the first update, not the one after; the guard's tests never.
+  assert.ok(has(".agents/NEW.md"), "a file the incoming framework adds must arrive");
+  assert.ok(!has(".agents/cli.test.mjs"), "the framework's own tests must never reach a project");
+  // The framework's record arrives with it; the project's own is never opened.
+  assert.match(readFileSync(join(root, ".agents/docs/DECISIONS.md"), "utf8"), /A new reason/);
+  assert.equal(readFileSync(join(root, "docs/DECISIONS.md"), "utf8"), "# Decisions\n\n## 26. Our own\n");
 
   const version = JSON.parse(readFileSync(join(root, ".agents/version.json"), "utf8"));
   assert.equal(version.version, "9.0.0");
@@ -595,4 +776,13 @@ test("release: version.json names the newest UPGRADING.md entry and every shippe
   const shipped = readdirSync(join(FRAMEWORK, "skills"), { withFileTypes: true })
     .filter((e) => e.isDirectory()).map((e) => e.name).sort();
   assert.deepEqual(version.skills, shipped, "version.json's skills must be exactly .agents/skills/");
+});
+
+// docs/DECISIONS.md here is the seed every project starts from, as plan/ is — a framework entry
+// written into it would arrive in every new project as that project's #1.
+test("release: the framework's decisions are in .agents/, and the project seed holds none", () => {
+  const entries = (p) => [...readFileSync(p, "utf8").matchAll(/^## (\d+)\./gm)].map((m) => Number(m[1]));
+  const framework = entries(join(FRAMEWORK, "docs/DECISIONS.md"));
+  assert.deepEqual(framework, framework.map((_, i) => i + 1), ".agents/docs/DECISIONS.md must number 1, 2, 3… with no gap");
+  assert.deepEqual(entries(join(FRAMEWORK, "../docs/DECISIONS.md")), [], "docs/DECISIONS.md must stay an empty seed");
 });

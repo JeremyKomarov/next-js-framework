@@ -3,9 +3,11 @@
 // A rulebook only a reviewer checks decays quietly, and the layering rules decay first — breaking
 // them is always the convenient thing to do in the moment. Everything here is one of those.
 //
-// Note on flat config: an `overrides` block REPLACES a rule rather than merging with it, so every
-// block must re-list the base patterns it still wants. That is why the zones below are named
-// consts recombined per block instead of written inline.
+// Note on flat config: a later block REPLACES a rule rather than merging with it, so every block
+// must re-list the base patterns it still wants. That is why the zones below are named consts
+// recombined per block instead of written inline, and why restrict() writes each zone twice.
+//
+// The framework's CI proves every zone both ways inside a real project (bin/check-lint.mjs).
 import { readdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,8 +33,10 @@ const RELATIVE_PARENT = {
     "when a file moves and hides what a component really depends on.",
 };
 
+// Every zone names a folder's root as well as what is in it: `@/features/billing/*` alone let
+// `@/features/billing` — a feature's index, the most natural import there is — straight through.
 const NO_FEATURES = {
-  group: ["@/features/*", "@/features/**"],
+  group: ["@/features", "@/features/*", "@/features/**"],
   message:
     "01-STRUCTURE.md §1: shared/, core/ and store/ are the layers features depend on — they must " +
     "not depend back on one. Take what you need as a prop or a slot, or move the shared thing " +
@@ -40,9 +44,9 @@ const NO_FEATURES = {
 };
 
 const NO_SERVER = {
-  group: ["@/server/*", "@/server/**"],
+  group: ["@/server", "@/server/*", "@/server/**"],
   message:
-    "01-STRUCTURE.md §8: server modules belong to Route Handlers, layouts and middleware. Importing " +
+    "01-STRUCTURE.md §8: server modules belong to Route Handlers, layouts and the proxy. Importing " +
     "one from a component or a store risks credentials in the browser bundle — go through a " +
     "Route Handler.",
 };
@@ -65,9 +69,9 @@ const NO_SCSS_MODULE = {
     "nothing.",
 };
 
-// Icons come from exactly one library, wrapped by exactly one component (DECISIONS.md #23) — the
-// same chokepoint shape as NO_DB_CLIENT: everywhere may render an icon, nowhere but the wrapper
-// may import the library that draws it.
+// Icons come from exactly one library, wrapped by exactly one component — the same chokepoint
+// shape as NO_DB_CLIENT: everywhere may render an icon, nowhere but the wrapper may import the
+// library that draws it (.agents/docs/DECISIONS.md #23).
 const NO_ICON_LIBRARY = {
   group: ["lucide-react", "lucide-react/*"],
   message:
@@ -77,6 +81,23 @@ const NO_ICON_LIBRARY = {
 };
 
 const BASE = [RELATIVE_PARENT, NO_SCSS_MODULE, NO_DB_CLIENT, NO_ICON_LIBRARY];
+
+// A zone, and the same zone for the class maps inside it. A *.classes.ts is the one file allowed
+// to import its stylesheet (02-COMPONENTS.md §2), and nothing else about its layer changes. One
+// trailing block for every class map used to replace the whole firewall for them, so a class map
+// could import another feature, or server/ (.agents/docs/DECISIONS.md #35).
+const restrict = (files, patterns) => {
+  const rule = (p) => ({ "no-restricted-imports": ["error", { patterns: p }] });
+  // Without `files` a block applies to everything already linted; a `files` of "**" would make
+  // ESLint try to parse every stylesheet and markdown file too.
+  const maps = files ? files.filter((f) => f.endsWith("/**")).map((f) => `${f}/*.classes.ts`)
+                     : ["**/*.classes.ts"];
+  const forMaps = patterns.filter((p) => p !== NO_SCSS_MODULE);
+  return [
+    { ...(files && { files }), rules: rule(patterns) },
+    ...(maps.length ? [{ files: maps, rules: rule(forMaps) }] : []),
+  ];
+};
 
 export default [
   // eslint-config-next ships flat config from v16. Do NOT wrap these in FlatCompat — it throws
@@ -89,10 +110,9 @@ export default [
   },
 
   // -- everything ------------------------------------------------------------
+  ...restrict(undefined, BASE),
   {
     rules: {
-      "no-restricted-imports": ["error", { patterns: BASE }],
-
       "no-restricted-syntax": [
         "error",
         {
@@ -113,77 +133,41 @@ export default [
   },
 
   // -- the layers below features never depend back on one --------------------
-  {
-    files: ["src/shared/**", "src/core/**", "src/store/**"],
-    rules: {
-      "no-restricted-imports": ["error", { patterns: [...BASE, NO_FEATURES, NO_SERVER] }],
-    },
-  },
+  ...restrict(["src/shared/**", "src/core/**", "src/store/**"], [...BASE, NO_FEATURES, NO_SERVER]),
 
   // The one declared exception: mapping i18n namespaces to feature-owned strings files is this
-  // file's entire job (02-COMPONENTS.md §9).
-  {
-    files: ["src/core/i18n/messages.ts"],
-    rules: { "no-restricted-imports": ["error", { patterns: BASE }] },
-  },
+  // file's entire job (02-COMPONENTS.md §9). It is still core/, so server/ stays out of reach.
+  ...restrict(["src/core/i18n/messages.ts"], [...BASE, NO_SERVER]),
 
   // -- a feature never imports another feature -------------------------------
-  // One block per feature, banning the others by name. Twelve lines for the whole firewall.
-  ...FEATURES.map((feature) => ({
-    files: [`src/features/${feature}/**`],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          patterns: [
-            ...BASE,
-            NO_SERVER,
-            ...FEATURES.filter((other) => other !== feature).map((other) => ({
-              group: [`@/features/${other}/*`, `@/features/${other}/**`],
-              message:
-                `01-STRUCTURE.md §1: features/${feature} must not import features/${other}. ` +
-                `If both need this, it belongs in shared/ — promoted, not cross-imported.`,
-            })),
-          ],
-        },
-      ],
-    },
-  })),
+  // One zone per feature, banning the others by name — the root of each as well as what is in it.
+  ...FEATURES.flatMap((feature) => restrict([`src/features/${feature}/**`], [
+    ...BASE,
+    NO_SERVER,
+    ...FEATURES.filter((other) => other !== feature).map((other) => ({
+      group: [`@/features/${other}`, `@/features/${other}/*`, `@/features/${other}/**`],
+      message:
+        `01-STRUCTURE.md §1: features/${feature} must not import features/${other}. ` +
+        `If both need this, it belongs in shared/ — promoted, not cross-imported.`,
+    })),
+  ])),
 
-  // -- routes, middleware and the server may reach the server ----------------
-  // They still may not construct a database client — that is server/db/'s job alone.
-  {
-    files: ["src/app/**", "src/middleware.ts", "src/server/**"],
-    rules: { "no-restricted-imports": ["error", { patterns: BASE }] },
-  },
+  // -- routes, the proxy and the server may reach the server -----------------
+  // Next 16 renamed middleware.ts to proxy.ts; both are listed. They still may not construct a
+  // database client — that is server/db/'s job alone.
+  ...restrict(["src/app/**", "src/proxy.ts", "src/middleware.ts", "src/server/**"], BASE),
 
   // server/db/ is where the client lives, so it is the one place that may import one.
-  {
-    files: ["src/server/db/**"],
-    rules: { "no-restricted-imports": ["error", { patterns: [RELATIVE_PARENT] }] },
-  },
+  ...restrict(["src/server/db/**"], [RELATIVE_PARENT]),
 
   // shared/components/Icon/ is where lucide-react is imported, so it is the one place exempt from
   // NO_ICON_LIBRARY — every other restriction on a shared/ file still applies (02-COMPONENTS.md §6a).
-  {
-    files: ["src/shared/components/Icon/**"],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        { patterns: [RELATIVE_PARENT, NO_SCSS_MODULE, NO_DB_CLIENT, NO_FEATURES, NO_SERVER] },
-      ],
-    },
-  },
+  ...restrict(["src/shared/components/Icon/**"],
+    [RELATIVE_PARENT, NO_SCSS_MODULE, NO_DB_CLIENT, NO_FEATURES, NO_SERVER]),
 
   // -- the chokepoint exempts itself -----------------------------------------
   {
     files: ["src/core/config/env.ts"],
     rules: { "no-restricted-syntax": "off" },
-  },
-
-  // -- the only file type allowed to import a stylesheet ---------------------
-  {
-    files: ["**/*.classes.ts"],
-    rules: { "no-restricted-imports": ["error", { patterns: [RELATIVE_PARENT, NO_DB_CLIENT] }] },
   },
 ];

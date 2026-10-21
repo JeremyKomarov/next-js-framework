@@ -4,7 +4,7 @@
 #
 # All three platforms are in the matrix on purpose, not for completeness. Each one breaks this
 # framework differently, and every cross-platform defect it has hit was found by running it
-# somewhere other than Linux (docs/DECISIONS.md #19):
+# somewhere other than Linux (.agents/docs/DECISIONS.md #19):
 #
 #   Windows  absolute paths out of globSync, CRLF breaking a byte-for-byte comparison, symlinks
 #            refused without developer mode, npm/npx as .cmd shims Node will not spawn directly.
@@ -51,7 +51,8 @@ jobs:
           cd "$RUNNER_TEMP/scaffolded"
           node .agents/cli.mjs check
           node .agents/cli.mjs rule 02 7
-          # The project gets its own guide and its own CI, never the framework's (DECISIONS.md #28, #29).
+          # The project gets its own guide and its own CI, never the framework's
+          # (.agents/docs/DECISIONS.md #28, #29).
           grep -q "^# Scaffold Check — working guide" AGENTS.md
           git diff --no-index --quiet .github/workflows/verify.yml .agents/kit/ci/verify.yml
           test -d .git
@@ -67,10 +68,38 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      # The apostrophe and the braces are the test: written into JSX as text, either one failed
+      # the project's own lint or typecheck on its first run (.agents/docs/DECISIONS.md #32).
       - name: scaffold a project, install it, and run its own gate
         run: |
           node bin/create.mjs "$RUNNER_TEMP/installed" --yes \
-            --name="Install Check" --description="Built by CI."
+            --name "Install Check's {App}" --description="Built by CI."
           cd "$RUNNER_TEMP/installed"
           npm run verify
           test "$(git config core.hooksPath)" = ".agents/kit/hooks"
+      # The code templates are what an agent copies verbatim; nothing else ever runs them.
+      - name: type-check and lint the code templates inside that scaffold
+        run: node bin/check-templates.mjs "$RUNNER_TEMP/installed"
+      # The import firewall is a lint config, and a config nothing feeds a bad import to has side
+      # doors nobody sees (.agents/docs/DECISIONS.md #35). Every zone, both ways.
+      - name: prove every lint zone refuses and allows what the rulebook says
+        run: node bin/check-lint.mjs "$RUNNER_TEMP/installed"
+
+  # The checks need Node 22.2. On anything older they must say so, `hooks` (the postinstall) must
+  # not fail `npm install`, and the scaffolder must refuse before writing a file.
+  old-node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # `if`, not `!`: bash -e never fails a step on a negated command, so `! cmd` asserts nothing.
+      - name: refuse clearly, and leave install alone
+        run: |
+          if node .agents/cli.mjs check 2> err.txt; then echo "check ran on Node 20"; exit 1; fi
+          grep -q "needs Node 22.2 or newer" err.txt
+          node .agents/cli.mjs rule 02 7 > /dev/null
+          node .agents/cli.mjs hooks
+          if node bin/create.mjs "$RUNNER_TEMP/old" --yes; then echo "create ran on Node 20"; exit 1; fi
+          test ! -e "$RUNNER_TEMP/old"

@@ -13,7 +13,7 @@ Enforces `03 §1`–§3. Follow the order; each step is one file.
 
 ## Steps
 
-Templates for every file are in `.agents/templates/api/`.
+Every file's template is in `.agents/templates/api.md`, in this order.
 
 1. `core/constants/api-endpoints.const.ts` — the URL as a const. Never a literal at a call site.
 2. `<owner>/api/$1.dto.ts` — the response schema, **and** the request input schema if there is a

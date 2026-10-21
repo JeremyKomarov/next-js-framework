@@ -10,7 +10,7 @@ the one that matches the directory. Rules: `04 §3`,
 
 ---
 
-## `features/<name>/AGENTS.md` — built
+## `features/<name>/AGENTS.md` — shape A, built
 
 ```md
 # `<name>`
@@ -46,7 +46,7 @@ One `## Status` row per endpoint, stating what is real **right now**. "Live" and
 both honest; "in progress" is not a status, it is an excuse. Omit `## What moved to shared/` unless
 something did — and when it did, say *why*, because the reason is the useful part.
 
-## `features/<name>/AGENTS.md` — declared, not built
+## `features/<name>/AGENTS.md` — shape B, declared, not built
 
 Not a placeholder. This is the honest state of a route that is in nav and flagged off.
 
@@ -147,7 +147,7 @@ it runs.
 | `constants/routes.const.ts` | Routes, derived from `FEATURES`. | Never restate a route here. |
 | `constants/query-keys.const.ts` | TanStack Query keys. | Never an inline key. |
 | `constants/storage-keys.const.ts` | Browser storage keys. | Never an inline `localStorage` key. |
-| `api/api-error.ts` | `API_ERROR_CODES`, `API_ERROR_STATUS`, `ApiError`. | The code picks the status. |
+| `api/api-error.ts` | `API_ERROR_CODES`, `API_ERROR_STATUS`, `ApiError`, `toApiError`. | The code picks the status. |
 | `i18n/messages.ts` | Namespace → strings file. | The one file in `core/` allowed to import from `features/`. |
 | `styles/tokens.scss` | Every design token. | The only file that may contain a hex colour. |
 ```

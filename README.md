@@ -12,7 +12,8 @@ node bin/create.mjs .          # in place, turning this clone into the project
 
 Three questions, then a repository where `npm run dev` and `npm run verify` both work, with Claude
 Code and Codex already wired to the same instructions. Nothing is published to npm and nothing is
-installed globally — it is one script you can read (`docs/DECISIONS.md` #21).
+installed globally — it is one script you can read (`.agents/docs/DECISIONS.md` #21). It needs
+Node 22.2 or newer, and on an older one refuses before writing anything.
 
 Works from **Claude Code and Codex** off one canonical set of files.
 
@@ -47,7 +48,7 @@ node .agents/cli.mjs rule -q tokens  # which sections mention it
 This is tier 4, and it is the difference between `02 §7` costing ~400 words and ~2,200. The
 addresses were always section-level; until this existed, retrieval was file-level, so the
 precision was decorative and every cited rule was paid for at five times its size. The map is
-generated from the files, so it cannot go stale (`docs/DECISIONS.md` #20).
+generated from the files, so it cannot go stale (`.agents/docs/DECISIONS.md` #20).
 
 ## The stack
 
@@ -61,7 +62,8 @@ never create the folder. **No auth vendor is prescribed.** No Tailwind, no CSS-i
 
 ```
 .agents/           THE FRAMEWORK — all of it. You read it; you do not edit it.
-  docs/            the rulebook. Five files, 38 sections, fetched with `rule`.
+  docs/            the rulebook. Five files, 38 sections, fetched with `rule` — and DECISIONS.md,
+                   why it is built this way: numbered, append-only, mirrored by every update
   skills/          the twelve playbooks. Read natively by Codex, mirrored for Claude Code.
   templates/       the component kit, the API chain, the index shapes, the phase shape
   kit/             eslint config, tsconfig, vitest config, the registry test, the pre-commit
@@ -75,7 +77,7 @@ AGENTS.md          in this repository, the guide for working on the framework. A
                    guide is .agents/templates/root-guide.md, which the scaffolder copies in.
 .github/           in this repository, the framework's CI. A project gets its own from the kit.
 .claude/           settings.json (the command allowlist) and the skills mirror
-docs/              YOURS — DECISIONS.md and GLOSSARY.md, seeded; your own docs beside them
+docs/              YOURS — your own DECISIONS.md (empty, numbered from 1) and GLOSSARY.md, seeded
 plan/              YOURS — the table of contents, NOW.md, one small file per phase
 .gitattributes     pins the working tree to LF. The checks compare files byte for byte; keep it.
 ```
@@ -95,12 +97,18 @@ without anyone maintaining a list.
 one thing, and asserts the guard names it — in both directions, because a check that fires on
 correct code gets disabled within a week.
 
+**The templates are run, not just read.** The code in `.agents/templates/` is what an agent copies
+verbatim, so CI writes it into an installed scaffold and type-checks and lints it there
+(`bin/check-templates.mjs`). The import firewall is proven the same way: CI feeds every lint zone
+imports it must refuse and imports it must allow (`bin/check-lint.mjs`). And a scaffold installs
+exact versions, the set that job last proved.
+
 **Windows, macOS and Linux are all first-class,** and CI runs the full suite plus a real scaffold
 on each — and on Linux installs one and runs its own `npm run verify`, which is the only proof the
 promise at the top of this page holds. They fail differently: Windows brings CRLF, absolute glob paths and symlinks that need
 developer mode; macOS brings a case-insensitive filesystem, which the mirrors' byte-for-byte
 comparison runs straight into; Linux is where all of that is invisible
-(`docs/DECISIONS.md` #19, #22).
+(`.agents/docs/DECISIONS.md` #19, #22).
 
 Deliberately *not* mechanized: naming, co-location, and "does `shared/` already have something
 that does this". Those need judgement, and a guard that is wrong often enough gets ignored.
@@ -124,7 +132,7 @@ copy and `npm run guard` fails on a byte of drift.
 The guard holds each `SKILL.md`'s frontmatter to the keys Claude Code documents. Claude Code
 ignores any other key without a word, so a misspelled `disable_model_invocation` quietly leaves a
 skill invocable — the allowlist turns that typo into a failure. Codex reads only `name` and `description`, so **the instruction lives in the body of a
-`SKILL.md`, never in its frontmatter.** Why only these two: `docs/DECISIONS.md` #26.
+`SKILL.md`, never in its frontmatter.** Why only these two: `.agents/docs/DECISIONS.md` #26.
 
 ## Updating a project already using it
 
@@ -141,7 +149,10 @@ project must change outside `.agents/` arrives as an `.agents/UPGRADING.md` note
 
 ## Adapting it
 
-The opinions are written down with their reasons in [`docs/DECISIONS.md`](docs/DECISIONS.md) —
-numbered and append-only. Disagreeing is fine; do it by adding the next entry,
-superseding one, so the next person can see what changed and why. Editing the reasoning out is how
-a convention becomes a superstition.
+The opinions are written down with their reasons in
+[`.agents/docs/DECISIONS.md`](.agents/docs/DECISIONS.md) — numbered and append-only. Disagreeing
+is fine; do it by adding the next entry, superseding one, so the next person can see what changed
+and why. Editing the reasoning out is how a convention becomes a superstition.
+
+A project keeps its own record in `docs/DECISIONS.md`, numbered from 1. The two never share a
+number, and every citation names which record it means (`.agents/docs/DECISIONS.md` #34).

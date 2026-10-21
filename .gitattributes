@@ -1,10 +1,11 @@
 # Line endings are a correctness problem here, not a style one.
 #
-# The guards compare file contents byte for byte — a skill mirror against its canonical copy, the
-# generated playbook table against the one in AGENTS.md. With core.autocrlf=true and no rule here,
-# Windows checks every file out as CRLF, the comparison never matches, and `npm run guard:agents`
-# fails on a clean tree with nothing wrong. `npm run sync:agents` then writes LF, git converts it
-# back on the next checkout, and the failure returns for good.
+# The guards compare file contents byte for byte — a skill mirror against its canonical copy — and
+# that is how they first broke on Windows: with core.autocrlf=true and no rule here, a file the
+# framework generated in LF was compared with one git had checked out as CRLF, never matched, and
+# `npm run guard` failed on a clean tree with nothing wrong. `npm run sync:agents` then wrote LF,
+# git converted it back on the next checkout, and the failure returned for good
+# (.agents/docs/DECISIONS.md #19).
 #
 # So: everything textual is LF in the working tree as well as in the repository.
 * text=auto eol=lf

@@ -14,15 +14,27 @@
 // Paths and line endings are normalised before anything is compared (05-WORKFLOW.md §4). Without
 // that this reported a complete skill mirror as ten missing files on Windows, then crashed
 // repairing it.
-import {
-  readFileSync, writeFileSync, existsSync, readdirSync, lstatSync, readlinkSync, mkdirSync,
-  rmSync, copyFileSync, symlinkSync, cpSync, mkdtempSync, globSync, chmodSync,
-} from "node:fs";
+//
+// node:fs is imported whole, not by name: a named import of globSync fails at link time on Node
+// 20, before a line of this file runs, with a SyntaxError naming neither the version nor the fix
+// — and `hooks` is the postinstall, so that crash failed `npm install` itself. See NODE_MIN.
+import * as fs from "node:fs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { join, resolve, dirname, relative, parse, sep, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
+
+const {
+  readFileSync, writeFileSync, existsSync, readdirSync, lstatSync, readlinkSync, mkdirSync,
+  rmSync, copyFileSync, symlinkSync, cpSync, mkdtempSync, globSync, chmodSync,
+} = fs;
+
+// fs.globSync arrived in Node 22.0 and took withFileTypes in 22.2; check, sync and update are
+// built on it. `rule` and `hooks` need neither, and `hooks` runs as the postinstall — refusing
+// there would fail `npm install` for an app that otherwise runs.
+const NODE_MIN = [22, 2];
+const NEEDS_GLOB = new Set(["check", "sync", "update"]);
 
 // ---------------------------------------------------------------- where we are
 // fileURLToPath, not URL.pathname: on Windows the latter yields "/D:/..." and every read fails.
@@ -85,7 +97,8 @@ const SHIM = `@AGENTS.md
 // Skill keys: the frontmatter Claude Code documents. `name` and `description` are the two both
 // agents read; Codex ignores the rest. Claude Code ignores a key it does not recognise, with no
 // error — so a misspelled `disable_model_invocation` leaves a skill model-invocable and nothing
-// says so. The allowlist is what turns that typo into a failure. 05-WORKFLOW.md §4, DECISIONS.md #30.
+// says so. The allowlist is what turns that typo into a failure. 05-WORKFLOW.md §4,
+// .agents/docs/DECISIONS.md #30.
 const FRONTMATTER_KEYS = new Set([
   "name", "description", "when_to_use", "argument-hint", "arguments", "disable-model-invocation",
   "user-invocable", "allowed-tools", "disallowed-tools", "model", "effort", "context", "agent",
@@ -259,8 +272,10 @@ function checkPlan(fail) {
 }
 
 // ================================================================ check: docs
-// Every feature has its index, every §N citation resolves, every AGENTS.md has its CLAUDE.md
-// shim, and the root guide fits in what Codex reads. None of these can check an index is still TRUE — that is the sync-index playbook's job.
+// Every feature has its index, every §N, `rule NN N` and decision citation resolves, every
+// framework path a playbook names exists, every AGENTS.md has its CLAUDE.md shim, and the root
+// guide fits in what Codex reads. None of these can check an index is still TRUE — that is
+// sync-index's job.
 function checkDocs(fail) {
   if (!existsSync(join(ROOT, RULEBOOK))) return "no .agents/docs/ yet — nothing to check";
 
@@ -289,16 +304,83 @@ function checkDocs(fail) {
   const DOC_LINK = /(?:\.agents\/)?docs\/(\d\d-[A-Z-]+\.md)/g;
   // A section mark with no document number in front of it. The citation check above cannot see
   // one, and a playbook shipped pointing at a section that never existed because of it
-  // (DECISIONS.md #31). It resolves against the document the same line names before it
+  // (.agents/docs/DECISIONS.md #31). It resolves against the document the same line names before it
   // ("rule 02 7 — §7", "05-WORKFLOW.md ... §2") or straight after it ("§2 of 05-WORKFLOW.md");
   // inside a rulebook file, against that file. One that resolves against nothing fails.
   const BARE = /§\s?(\d+[a-z]?)/g;
   const NAMED_BEFORE = /(\d\d)-[A-Z-]+\.md|\brule (\d\d)\b|\b(\d\d) §/g;
   const NAMED_AFTER = /^§\s?\d+[a-z]?\s+of\s+`?(?:\.agents\/)?(?:docs\/)?(\d\d)-[A-Z-]+\.md/;
+  // The command form — `rule 02 7` — carries no § at all, so none of the checks above could see
+  // it, and it is how the routing table in 00-INDEX.md, the root guide and every layer index
+  // cite. Only after `cli.mjs `, `npm run ` or a backtick, so prose about rule 12 of a lease is
+  // left alone. A section mark after the document (`rule 02 §7`) is CITATION's to check.
+  const RULE_CMD = /(?:cli\.mjs |npm run |`)rule(?: --)? (\d\d)(?: (\d+[a-z]?))?\b/g;
+  // Its continuation — "`rule 03 2`, `03 3`, `03 4`" — checked only where citations live.
+  const RULE_PAIR = /`(\d\d) (\d+[a-z]?)`/g;
   // Only where the framework's citations live. A project's own prose may use § for its own
-  // sections — a contract, a spec — and a guard that fires on those gets deleted.
+  // sections — a contract, a spec, its own decisions — and a guard that fires on those gets
+  // deleted.
   const citesRulebook = (file) => file.startsWith(".agents/") || file.startsWith("plan/") ||
-    /(^|\/)AGENTS\.md$/.test(file) || file === "docs/DECISIONS.md" || !file.endsWith(".md");
+    /(^|\/)AGENTS\.md$/.test(file) || !file.endsWith(".md");
+
+  // A decision is cited by record and number. The framework's are .agents/docs/DECISIONS.md and a
+  // project's docs/DECISIONS.md, each numbered from 1, so a citation of the file name alone names
+  // neither — when they shared one sequence, the rulebook's #26 was a project's own #26
+  // (.agents/docs/DECISIONS.md #34).
+  // A record is history: what its entries cite is what was true when each was written.
+  // The framework's first: `.agents/docs/DECISIONS.md` also ends in `docs/DECISIONS.md`.
+  const RECORDS = [".agents/docs/DECISIONS.md", "docs/DECISIONS.md"];
+  const DECISION = /([\w./-]*)DECISIONS\.md`?\s*(#\d+(?:(?:,\s*(?:and\s+)?|\s+and\s+)#\d+)*)/g;
+  const entriesOf = new Map(RECORDS.map((rec) => [rec, existsSync(join(ROOT, rec))
+    ? new Set([...read(join(ROOT, rec)).matchAll(/^##\s+(\d+)\./gm)].map((m) => m[1])) : null]));
+
+  // A framework path in the prose an agent follows must exist. Three playbooks shipped telling
+  // the agent to copy from templates that never existed — `.agents/templates/api/` beside the real
+  // `api.md` — and every check above passed them, because none carried a §. Not a decision
+  // record, for the reason above. A placeholder (`<name>`, `$1`) ends the match, so what is checked
+  // is the real prefix before it.
+  const FRAMEWORK_PATH = /(?<![\w-])\.agents\/[\w./-]*/g;
+  const RULEBOOK_FILE = /^\.agents\/docs\/\d\d-[A-Z-]+\.md$/;          // DOC_LINK reports these
+  const namesPaths = (file) => file.endsWith(".md") && !RECORDS.includes(file) &&
+    (file.startsWith(".agents/") || /(^|\/)AGENTS\.md$/.test(file));
+  // existsSync says yes to the wrong case on macOS and Windows, so a path right only there would
+  // pass here and fail on Linux. Each segment is matched against the real listing instead.
+  const existsExactly = (rel) => {
+    let dir = ROOT;
+    for (const part of rel.split("/").filter(Boolean)) {
+      try { if (!readdirSync(dir).includes(part)) return false; } catch { return false; }
+      dir = join(dir, part);
+    }
+    return true;
+  };
+
+  const cite = (at, docNum, sectionNum) => {
+    const docFile = byNumber.get(docNum);
+    if (!docFile) fail(`${at}  cites docs/${docNum}-*.md, which does not exist`);
+    else if (sectionNum && !sections.get(docFile).has(sectionNum))
+      fail(`${at}  cites ${docFile} §${sectionNum}, which has no such section — a ` +
+           `section was renumbered without updating what points at it`);
+  };
+
+  const citeDecisions = (at, prefix, list, checkBare) => {
+    const numbers = [...list.matchAll(/#(\d+)/g)].map((m) => m[1]);
+    const record = RECORDS.find((rec) => `/${prefix}DECISIONS.md`.endsWith(`/${rec}`));
+    if (!record) {
+      if (!prefix && checkBare)
+        fail(`${at}  DECISIONS.md ${list} names neither record — write ` +
+             `.agents/docs/DECISIONS.md #N for the framework's decisions, docs/DECISIONS.md #N ` +
+             `for this project's`);
+      return;                                                     // someone else's DECISIONS.md
+    }
+    const have = entriesOf.get(record);
+    if (!have) { fail(`${at}  cites ${record}, which does not exist`); return; }
+    for (const n of numbers.filter((n) => !have.has(n))) {
+      // The one a project hits after 3.0.0: its code still citing a framework entry where it was.
+      const moved = record === "docs/DECISIONS.md" && entriesOf.get(RECORDS[0])?.has(n);
+      fail(`${at}  cites ${record} #${n}, which has no such entry` + (moved
+        ? ` — if it means the framework's, that is .agents/docs/DECISIONS.md #${n} now` : ""));
+    }
+  };
 
   // The guard's own test asserts that a dangling citation fails, so its fixtures contain dangling
   // citations. It is the only file in the repository allowed to, it is framework-owned, and it
@@ -310,20 +392,28 @@ function checkDocs(fail) {
     if (file === SELF_TEST) continue;
     const ownDoc = file.match(/^\.agents\/docs\/(\d\d)-/)?.[1];
     const checkBare = citesRulebook(file);
+    const checkPaths = namesPaths(file);
     read(join(ROOT, file)).split("\n").forEach((line, i) => {
-      for (const [, docNum, sectionNum] of line.matchAll(CITATION)) {
-        const docFile = byNumber.get(docNum);
-        if (!docFile) { fail(`${file}:${i + 1}  cites docs/${docNum}-*.md, which does not exist`); continue; }
-        if (!sections.get(docFile).has(sectionNum))
-          fail(`${file}:${i + 1}  cites ${docFile} §${sectionNum}, which has no such section — a ` +
-               `section was renumbered without updating what points at it`);
-      }
+      const at = `${file}:${i + 1}`;
+      for (const [, docNum, sectionNum] of line.matchAll(CITATION)) cite(at, docNum, sectionNum);
+      for (const [, docNum, sectionNum] of line.matchAll(RULE_CMD)) cite(at, docNum, sectionNum);
+      if (!RECORDS.includes(file))
+        for (const [, prefix, list] of line.matchAll(DECISION))
+          citeDecisions(at, prefix, list, checkBare);
       for (const [, name] of line.matchAll(DOC_LINK)) {
         if (!filenames.has(name))
-          fail(`${file}:${i + 1}  links ${RULEBOOK}/${name}, which does not exist — a rulebook ` +
+          fail(`${at}  links ${RULEBOOK}/${name}, which does not exist — a rulebook ` +
                `file was renamed or merged without updating what points at it`);
       }
+      if (checkPaths) for (const [match] of line.matchAll(FRAMEWORK_PATH)) {
+        const path = match.replace(/\.+$/, "");                      // a sentence's full stop
+        if (!RULEBOOK_FILE.test(path) && !existsExactly(path))
+          fail(`${at}  names ${path}, which does not exist — a framework file was renamed or ` +
+               `merged without updating what points at it`);
+      }
       if (!checkBare) return;
+      if (file.endsWith(".md"))
+        for (const [, docNum, sectionNum] of line.matchAll(RULE_PAIR)) cite(at, docNum, sectionNum);
       for (const m of line.matchAll(BARE)) {
         const before = line.slice(0, m.index);
         if (/\d\d(?:-[A-Z-]+\.md)?`?\s+$/.test(before)) continue;     // a full citation — checked above
@@ -331,12 +421,12 @@ function checkDocs(fail) {
           line.slice(m.index).match(NAMED_AFTER)?.[1] ??
           (byNumber.has(ownDoc) ? ownDoc : null);
         if (!doc) {
-          fail(`${file}:${i + 1}  §${m[1]} names no document — write it as \`NN §${m[1]}\` so it ` +
+          fail(`${at}  §${m[1]} names no document — write it as \`NN §${m[1]}\` so it ` +
                `can be checked and fetched`);
         } else if (!byNumber.has(doc)) {
-          fail(`${file}:${i + 1}  §${m[1]} resolves to docs/${doc}-*.md, which does not exist`);
+          fail(`${at}  §${m[1]} resolves to docs/${doc}-*.md, which does not exist`);
         } else if (!sections.get(byNumber.get(doc)).has(m[1])) {
-          fail(`${file}:${i + 1}  §${m[1]} resolves to ${byNumber.get(doc)}, which has no such section`);
+          fail(`${at}  §${m[1]} resolves to ${byNumber.get(doc)}, which has no such section`);
         }
       }
     });
@@ -350,7 +440,7 @@ function checkDocs(fail) {
     const shim = join(ROOT, dir, "CLAUDE.md");
     if (!existsSync(shim)) {
       fail(`${at}CLAUDE.md  missing — Claude Code does not read AGENTS.md, so each one needs ` +
-           `its one-line shim (DECISIONS.md #26). Run: npm run sync:agents`);
+           `its one-line shim (.agents/docs/DECISIONS.md #26). Run: npm run sync:agents`);
       continue;
     }
     const target = readFileSync(shim, "utf8").match(/@([\w./-]+\.md)/)?.[1];
@@ -374,8 +464,9 @@ function checkDocs(fail) {
 // a *.classes.ts names exists in the stylesheet beside it (02 §2).
 function checkStyles(fail) {
   const TOKENS = "core/styles/tokens.scss";
-  // The framework's own copy-in starting point (02-COMPONENTS.md §7, DECISIONS.md #25) is real
-  // values by design and never reaches a project at this path — it is copied to TOKENS, not
+  // The framework's own copy-in starting point (02-COMPONENTS.md §7,
+  // .agents/docs/DECISIONS.md #25) is real values by design and never reaches a project at this
+  // path — it is copied to TOKENS, not
   // imported from here. One named exclusion, the same shape as checkDocs' SELF_TEST: it is
   // framework-owned, it never reaches a project, and a glob pattern broad enough to catch the
   // general case would also blind the check to a real project file named similarly.
@@ -387,17 +478,26 @@ function checkStyles(fail) {
   // Block comments are blanked in place rather than removed, so line numbers still point at the
   // real line. `url(#fade)` is an SVG filter reference, not a colour, and "fade" is four hex
   // digits — the naive match calls it a hardcoded colour and the fix is to stop trusting the
-  // guard. Same for anything already inside var(), which is a token by definition.
+  // guard. Same for anything already inside var(), which is a token by definition. A line
+  // comment is prose wherever it starts — `color: var(--x); // was #ff0000` failed — and url()
+  // goes first, because `url(//cdn…)` is not one. And a selector is not a value: `#add-button`,
+  // `#feed` and `#cafe` are ids spelled in hex digits, so the text before each `{`, back to the
+  // last `;`, `{` or `}`, is blanked too — across lines, so a selector list split over several
+  // goes, and a gradient's colours on lines of their own stay.
+  const LINE_COMMENT = /(^|\s)\/\/.*$/;
   const scannable = (src) => src
     .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
     .split("\n")
-    .map((line) => (line.trim().startsWith("//") ? "" : line.replace(/\burl\([^)]*\)/g, "")));
+    .map((line) => line.replace(/\burl\([^)]*\)/g, "").replace(LINE_COMMENT, "$1"))
+    .join("\n")
+    .replace(/[^{};]*\{/g, (m) => m.replace(/[^\n{]/g, " "))
+    .split("\n");
   const withoutVars = (line) => line.replace(/\bvar\([^)]*\)/g, "");
 
   // Hex was the only spelling checked, so `color: white` and `rgb(0 0 0)` broke the same rule and
-  // passed (DECISIONS.md #31). A colour function wrapping a var() is a token being adjusted, not a
-  // literal, and is left alone. A named colour only counts as the value of a colour property —
-  // `tan` and `linen` mean nothing elsewhere.
+  // passed (.agents/docs/DECISIONS.md #31). A colour function wrapping a var() is a token being
+  // adjusted, not a literal, and is left alone. A named colour only counts as the value of a
+  // colour property — `tan` and `linen` mean nothing elsewhere.
   const COLOUR_FN = /\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g;
   const DECLARATION = /([a-zA-Z-]+)\s*:\s*([^;{}]+)/g;
   const COLOUR_PROP = new RegExp("^(?:color|background(?:-color)?|border(?:-(?:top|right|bottom|left|" +
@@ -434,12 +534,62 @@ function checkStyles(fail) {
     return null;
   };
 
+  // Every class a stylesheet defines, with `&` resolved against its parent block at any depth.
+  // Matching only `&__el` and `&--mod` one level under a top-level block failed
+  // `&__row { &--active {} }`, `&-icon` and `.card .title` — the nesting 02 §7 calls fine and
+  // preferred — on stylesheets that were correct.
+  const definedClasses = (scss) => {
+    const src = scss.replace(/\/\*[\s\S]*?\*\//g, "").split("\n")
+      .map((line) => line.replace(LINE_COMMENT, "$1")).join("\n");
+    const defined = new Set();
+    const open = [[""]];                          // the resolved selector list of each open block
+    let selector = "", quote = null, escaped = false;
+    for (const ch of src) {
+      // Inside a string a brace or a semicolon is text: `content: "{"` opened a block.
+      if (quote) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === quote) quote = null;
+        selector += ch;
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        quote = ch;
+        selector += ch;
+      } else if (ch === "{") {
+        let parents = open.at(-1), own = selector.trim();
+        selector = "";
+        // @at-root takes what follows it out to the top level — a selector, not an at-rule.
+        if (own.startsWith("@at-root")) {
+          own = own.slice("@at-root".length).trim();
+          if (!own.includes("&")) parents = [""];
+        }
+        // An at-rule (@media, @supports, @include) nests without changing what & means.
+        if (!own || own.startsWith("@")) { open.push(parents); continue; }
+        const resolved = own.split(",").map((s) => s.trim()).flatMap((s) =>
+          parents.map((p) => (s.includes("&") ? s.replaceAll("&", p) : `${p} ${s}`.trim())));
+        for (const s of resolved)
+          for (const [, name] of s.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) defined.add(name);
+        open.push(resolved);
+      } else if (ch === "}") {
+        if (open.length > 1) open.pop();
+        selector = "";
+      } else if (ch === ";") {
+        selector = "";
+      } else {
+        selector += ch;
+      }
+    }
+    return defined;
+  };
+
   for (const file of sheets) {
     if (file === TOKENS || file.endsWith("/" + TOKENS) || file === TOKENS_TEMPLATE) continue;
-    scannable(read(join(ROOT, file))).forEach((line, i) => {
+    const src = read(join(ROOT, file)), original = src.split("\n");
+    scannable(src).forEach((line, i) => {
       const colour = literalColour(line);
       if (colour) fail(`${file}:${i + 1}  hardcoded colour ${colour} — use a var(--…) from ${TOKENS} ` +
-                       `(02-COMPONENTS.md §7)\n    ${line.trim().slice(0, 110)}`);
+                       `(02-COMPONENTS.md §7)\n    ${original[i].trim().slice(0, 110)}`);
     });
   }
 
@@ -452,10 +602,7 @@ function checkStyles(fail) {
     try { scss = read(join(ROOT, dirname(file), moduleName)); }
     catch { fail(`${file}  imports ${moduleName}, which does not exist`); continue; }
 
-    // Selectors the stylesheet defines, including BEM parts written as &__el / &--mod.
-    const defined = new Set([...scss.matchAll(/^\s*\.([a-zA-Z0-9_-]+)/gm)].map((m) => m[1]));
-    for (const block of [...scss.matchAll(/^\.([a-zA-Z0-9_-]+)/gm)].map((m) => m[1]))
-      for (const part of scss.matchAll(/&(__[a-zA-Z0-9_-]+|--[a-zA-Z0-9_-]+)/g)) defined.add(block + part[1]);
+    const defined = definedClasses(scss);
 
     // Comments stripped first: a doc comment explaining a class name is prose, not a lookup.
     const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -683,10 +830,15 @@ function update() {
   };
   const overlay = (rel) => { if (existsSync(join(from, rel))) cpSync(join(from, rel), join(ROOT, rel), { recursive: true, force: true }); };
 
-  mirror(".agents/docs");
-  overlay(".agents/cli.mjs");
-  for (const d of [".agents/kit", ".agents/templates"]) if (existsSync(join(ROOT, d))) mirror(d);
-  for (const f of [".agents/UPGRADING.md"]) overlay(f);
+  // Whatever the incoming .agents/ holds, by what it holds, not by a list here. The updater that
+  // runs is the project's old copy, so a list only learns of a new file one update late — which is
+  // why the framework's decisions live in docs/, the one directory every updater has mirrored
+  // (.agents/docs/DECISIONS.md #34). The guard's own tests never reach a project, and
+  // version.json is written below.
+  for (const e of readdirSync(join(from, ".agents"), { withFileTypes: true })) {
+    if (e.name.startsWith(".") || ["skills", "version.json", "cli.test.mjs"].includes(e.name)) continue;
+    if (e.isDirectory()) mirror(`.agents/${e.name}`); else overlay(`.agents/${e.name}`);
+  }
 
   // skills/ cannot be mirrored — your own playbooks live there too. version.json records which
   // ones the framework shipped, so only those are removed when it drops one.
@@ -732,28 +884,38 @@ function update() {
 //   rule 02         that file's sections
 //   rule 02 7       §7, and nothing else
 //   rule -q tokens  sections whose heading or body mentions "tokens"
+//   rule 02 -q grid the same, in 02 alone
 function ruleCmd() {
   const docs = rulebook();
   if (!docs.length) { console.error(`rule: no ${RULEBOOK}/ here`); process.exit(2); }
 
   // -q term, --q=term, --query term. Written by hand at a prompt, so both dashes work.
   const qi = argv.findIndex((a) => /^--?q(uery)?(=|$)/.test(a));
-  const query = qi === -1 ? null : (argv[qi].split("=").slice(1).join("=") || argv[qi + 1]);
+  const inline = qi !== -1 && argv[qi].includes("=");
+  const query = qi === -1 ? null : (inline ? argv[qi].split("=").slice(1).join("=") : argv[qi + 1]);
+  // A bare -q used to fall through to the map, which reads as "searched, found everything".
+  if (qi !== -1 && !query) { console.error("rule: -q needs a term, e.g. rule -q tokens"); process.exit(2); }
   // Absolute argv indices throughout: qi is one, so the query's own value (qi + 1) is dropped
   // by index rather than by value — otherwise `rule 02 -q 02` eats the document number too.
-  const args = argv.filter((a, i) => i > 0 && i !== qi && i !== qi + 1 && !a.startsWith("-"));
+  const args = argv.filter((a, i) => i > 0 && i !== qi && (inline || i !== qi + 1) && !a.startsWith("-"));
   // "02", "02-COMPONENTS.md", "§7", "7" — and "02 §7" arriving as one shell-quoted argument.
   const parts = args.flatMap((a) => a.split(/[\s§]+/)).filter(Boolean);
   const docArg = parts.find((p) => /^\d\d(-|$)/.test(p))?.slice(0, 2);
   const secArg = parts.find((p) => /^\d+[a-z]?$/.test(p) && p !== docArg);
 
+  if (docArg && !docs.some((d) => d.num === docArg)) {
+    console.error(`rule: no ${RULEBOOK}/${docArg}-*.md. Known: ${docs.map((d) => d.num).join(", ")}`);
+    process.exit(2);
+  }
+
   if (query) {
     const needle = query.toLowerCase();
-    const hits = docs.flatMap((d) => d.sections
+    const hits = docs.filter((d) => !docArg || d.num === docArg).flatMap((d) => d.sections
       .filter((s) => `${s.title}\n${s.body}`.toLowerCase().includes(needle))
       .map((s) => `  ${d.num} §${s.n.padEnd(3)} ${s.title}`));
-    console.log(hits.length ? `${hits.length} section(s) mentioning "${query}":\n\n${hits.join("\n")}\n
-  node .agents/cli.mjs rule <NN> <N>   to read one` : `no section mentions "${query}"`);
+    const scope = docArg ? ` of ${docArg}` : "";
+    console.log(hits.length ? `${hits.length} section(s)${scope} mentioning "${query}":\n\n${hits.join("\n")}\n
+  node .agents/cli.mjs rule <NN> <N>   to read one` : `no section${scope} mentions "${query}"`);
     return;
   }
 
@@ -769,7 +931,6 @@ function ruleCmd() {
   }
 
   const doc = docs.find((d) => d.num === docArg);
-  if (!doc) { console.error(`rule: no ${RULEBOOK}/${docArg}-*.md. Known: ${docs.map((d) => d.num).join(", ")}`); process.exit(2); }
 
   if (!secArg) {
     console.log(`${doc.path}\n`);
@@ -792,7 +953,7 @@ function ruleCmd() {
 //
 // Deliberately silent about what it cannot do: hooks are local and `--no-verify` skips them by
 // design, so this is the earlier, cheaper copy of the check CI already runs on push, not a
-// replacement for it (docs/DECISIONS.md #24).
+// replacement for it (.agents/docs/DECISIONS.md #24).
 function hooksCmd() {
   const dir = join(ROOT, ".agents/kit/hooks");
   if (!existsSync(dir)) { console.log("hooks: no .agents/kit/hooks/ here — nothing to install"); return; }
@@ -815,6 +976,13 @@ function hooksCmd() {
 }
 
 // ========================================================================= main
+const [major, minor] = process.versions.node.split(".").map(Number);
+if (NEEDS_GLOB.has(cmd) && (major < NODE_MIN[0] || (major === NODE_MIN[0] && minor < NODE_MIN[1]))) {
+  console.error(`cli: \`${cmd}\` needs Node ${NODE_MIN.join(".")} or newer — this is ${process.version}. ` +
+                `Upgrade Node; nothing here has changed.`);
+  process.exit(1);
+}
+
 switch (cmd) {
   case "rule": ruleCmd(); break;
   case "check": check(); break;

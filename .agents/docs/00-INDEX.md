@@ -29,7 +29,8 @@ The map is generated from the files, so it cannot go stale — and it is cheaper
 | What is actually checked, and by what? | `rule 05 3` |
 | How are Claude Code and Codex wired? Why is my skill invisible? | `rule 05 4` |
 | How do I branch, commit, update the framework? | `rule 05 5`, `rule 05 6` |
-| Why is it done this way and not the obvious way? | [`docs/DECISIONS.md`](../../docs/DECISIONS.md) |
+| Why is it done this way and not the obvious way? | [`.agents/docs/DECISIONS.md`](DECISIONS.md) — the framework's |
+| What has this project decided? | [`docs/DECISIONS.md`](../../docs/DECISIONS.md) — yours |
 | What does this word mean here? | [`docs/GLOSSARY.md`](../../docs/GLOSSARY.md) |
 
 ## The three rules that outrank convenience
@@ -77,11 +78,12 @@ judgement.
 |---|---|
 | `.agents/docs/` | framework — this rulebook. Fetch when cited; never renumber a section. |
 | `.agents/skills/` | framework — the playbooks. Add your own beside them, then `npm run sync:agents`. |
-| `.agents/cli.mjs` | framework — the rule reader, the guards, the sync and the updater. Changing one changes a rule, so it comes with a `DECISIONS.md` entry. |
+| `.agents/cli.mjs` | framework — the rule reader, the guards, the sync and the updater. Changing one changes a rule, so it comes with an `.agents/docs/DECISIONS.md` entry. |
 | `.agents/kit/`, `.agents/templates/` | framework — installed and copied from by the playbooks. |
 | `.agents/version.json`, `UPGRADING.md` | framework — which version you are on, and what an update asks of you. |
+| `.agents/docs/DECISIONS.md` | framework — why it is built this way. Numbered, append-only, replaced by every update; cite as `.agents/docs/DECISIONS.md #N`. |
 | `src/` | yours — every line of app code. |
-| `docs/` | yours — `DECISIONS.md` and `GLOSSARY.md` arrive seeded; append. |
+| `docs/` | yours — `DECISIONS.md` (yours, numbered from 1; cite as `docs/DECISIONS.md #N`) and `GLOSSARY.md` arrive seeded; append. |
 | `plan/` | yours — your phases. The shape is prescribed, the content never is. |
 | root configs, `AGENTS.md`, `CLAUDE.md`, `.gitattributes` | shared — pinned to the root by tool convention. |
 | `.claude/skills`, every `CLAUDE.md` | generated — written by `sync:agents`, holding no rule of their own. |

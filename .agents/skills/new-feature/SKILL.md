@@ -13,11 +13,10 @@ Enforces `04 §1`–§3 and `01 §2`.
 ## Steps
 
 1. **Check it does not exist.** If `features/$1/` is there, stop and say so.
-2. Create `features/$1/AGENTS.md` from `.agents/templates/INDEX.feature.md` — **shape B**, the
+2. Create `features/$1/AGENTS.md` from `.agents/templates/index.md` — **shape B**, the
    declared-but-unbuilt one. It is the honest state of a feature with no code.
-3. Create `features/$1/CLAUDE.md` as the two-line shim — the import, plus the HTML-comment
-   fallback that tells an agent to read `./AGENTS.md` directly if the import did not expand.
-   Copy it verbatim from the repo root's `CLAUDE.md`. It holds no rules of its own.
+3. `npm run sync:agents` — it writes the `CLAUDE.md` shim beside the new `AGENTS.md`, so Claude
+   Code can read it. Never write a shim by hand (`05 §4`); `guard` fails until it exists.
 4. Register the key in `core/config/features.const.ts`:
    - add to `FEATURE_KEYS` (camelCase key, kebab-case value if the route differs)
    - add to `FEATURES` with `{ route: "/$1", enabled: false }`

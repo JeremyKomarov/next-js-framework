@@ -120,15 +120,15 @@ callers. `<Button variant={BUTTON_VARIANTS.danger} />`, never a bespoke red butt
 screens share, each with its variants and its responsive behaviour. The kit is chosen per project,
 not prescribed: an admin tool needs a `Table` and an `AppShell`, a landing page needs neither. The
 `plan-kit` playbook makes the choice from the planned screens and records it, with what was left
-out, in `shared/AGENTS.md` (`DECISIONS.md #27`). A project built feature-first grows five
-different buttons and finds out in month two.
+out, in `shared/AGENTS.md` (`.agents/docs/DECISIONS.md #27`). A project built feature-first grows
+five different buttons and finds out in month two.
 
 ## 6a. Icons — one library, one wrapper
 
 Icons come from `lucide-react`, and `shared/components/Icon` is the only file that imports it
-(`DECISIONS.md #23`). Nowhere else writes `<svg>` markup or imports the library directly — ESLint's
-`no-restricted-imports` fails a direct import from anywhere else, the same shape as the
-`server/db/` client rule in `01 §8`.
+(`.agents/docs/DECISIONS.md #23`). Nowhere else writes `<svg>` markup or imports the library
+directly — ESLint's `no-restricted-imports` fails a direct import from anywhere else, the same
+shape as the `server/db/` client rule in `01 §8`.
 
 ```
 components/Icon/
@@ -175,9 +175,9 @@ component, consuming `var(--token)` and nothing else. No SCSS variables, no mixi
 
 **Copy `.agents/templates/tokens.scss` in whole for phase 01.2** — it is a complete, real default:
 every group below filled with values chosen for contrast and consistency, not a shape to invent
-values for under time pressure (`DECISIONS.md #25`). Re-hue the brand ramp to match your product;
-leave the neutral ramp, the semantic quads and the scales alone unless you have a specific reason
-— they are already built to sit together.
+values for under time pressure (`.agents/docs/DECISIONS.md #25`). Re-hue the brand ramp to match
+your product; leave the neutral ramp, the semantic quads and the scales alone unless you have a
+specific reason — they are already built to sit together.
 
 The framework specifies the **groups**; the template's values are the default, meant to be kept:
 
@@ -216,8 +216,9 @@ scope names; BEM is here for readability.
 }
 ```
 
-The guard expands `&__el` and `&--mod` when it checks the class map, so nested is fine and
-preferred. Component-local `@keyframes` live in the module.
+The guard resolves `&` at any depth when it checks the class map — `&__el`, `&--mod`, an
+element's own `&--mod`, `&-suffix` — so nested is fine and preferred. Component-local `@keyframes`
+live in the module.
 
 **Interaction:** every interactive element has a visible `--focus-ring` focus state; controls keep
 a 44px touch target on coarse pointers and a 16px font size so mobile browsers do not zoom; hover

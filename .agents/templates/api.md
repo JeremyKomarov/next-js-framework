@@ -63,7 +63,7 @@ export interface Example {
 The only place wire naming is allowed to touch. Components never see a DTO.
 
 ```ts
-import type { Example } from "../types/example.types";
+import type { Example } from "@/features/example/types/example.types";
 import type { ExampleDto } from "./example.dto";
 
 export function mapExampleDto(dto: ExampleDto): Example {
@@ -83,9 +83,11 @@ else; `env.useMocks` is false by default and throws at boot if it is true in pro
 
 ```ts
 import { API_ENDPOINTS } from "@/core/constants/api-endpoints.const";
-import { toApiError } from "@/core/api/http-error";
+import { toApiError } from "@/core/api/api-error";
 import { env } from "@/core/config/env";
-import { ExampleListDtoSchema, CreateExampleInputSchema, type CreateExampleInput } from "./example.dto";
+import {
+  ExampleDtoSchema, ExampleListDtoSchema, CreateExampleInputSchema, type CreateExampleInput,
+} from "./example.dto";
 import { exampleListMock } from "./example.mock";
 
 export async function fetchExampleList() {
@@ -105,7 +107,7 @@ export async function createExample(input: CreateExampleInput) {
   });
   if (!response.ok) throw await toApiError(response);
 
-  return ExampleListDtoSchema.shape.examples.element.parse(await response.json());
+  return ExampleDtoSchema.parse(await response.json());
 }
 ```
 
@@ -121,14 +123,17 @@ export const QUERY_KEYS = {
 
 ### 7. `<owner>/hooks/useExampleList.ts` and `useCreateExample.ts`
 
-The only place this feature calls `useQuery` / `useMutation`. Components call the hook, never
-`api/` directly. A mutation names what it invalidates, explicitly.
+The only place this feature calls `useQuery` / `useMutation`, one hook per file (`01 §2`).
+Components call the hook, never `api/` directly. Both hand components a domain object — a
+mutation has no `select`, so it maps inside `mutationFn` — and a mutation names what it
+invalidates, explicitly.
 
 ```ts
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+// <owner>/hooks/useExampleList.ts
+import { useQuery } from "@tanstack/react-query";
 import { QUERY_KEYS } from "@/core/constants/query-keys.const";
-import { fetchExampleList, createExample } from "../api/example.api";
-import { mapExampleDto } from "../api/example.mapper";
+import { fetchExampleList } from "@/features/example/api/example.api";
+import { mapExampleDto } from "@/features/example/api/example.mapper";
 
 export function useExampleList() {
   return useQuery({
@@ -136,14 +141,22 @@ export function useExampleList() {
     queryFn: async () => (await fetchExampleList()).examples.map(mapExampleDto),
   });
 }
+```
+
+```ts
+// <owner>/hooks/useCreateExample.ts
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { QUERY_KEYS } from "@/core/constants/query-keys.const";
+import { createExample } from "@/features/example/api/example.api";
+import type { CreateExampleInput } from "@/features/example/api/example.dto";
+import { mapExampleDto } from "@/features/example/api/example.mapper";
 
 export function useCreateExample() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: createExample,
+    mutationFn: async (input: CreateExampleInput) => mapExampleDto(await createExample(input)),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: QUERY_KEYS.examples.list }),
-    select: mapExampleDto,
   });
 }
 ```
@@ -151,7 +164,7 @@ export function useCreateExample() {
 ### 8. `app/api/examples/route.ts`
 
 Session first, and **before** reading any body, so an unauthenticated caller never triggers
-outbound work. Middleware is not the security boundary (`01 §8`). Failures are a
+outbound work. The proxy is not the security boundary (`01 §8`). Failures are a
 code, never a sentence — the code picks the status (`03 §2`).
 
 ```ts

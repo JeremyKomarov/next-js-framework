@@ -6,9 +6,10 @@
 //   node bin/create.mjs .                in place, in this clone of the template
 //   node bin/create.mjs . --yes          non-interactive, all defaults
 //
-// Run it from the template, not from npm — it is deliberately not published (DECISIONS.md #21).
+// Run it from the template, not from npm — it is deliberately not published
+// (.agents/docs/DECISIONS.md #21).
 //
-// Flags: --yes  --name=<n>  --description=<d>  --db  --skip-install
+// Flags: --yes  --name=<n>  --description=<d>  --db  --skip-install. Needs Node 22.2 or newer.
 //
 // The framework itself is .agents/ and nothing else, so scaffolding is: run create-next-app,
 // copy .agents/ and the root governance files in, merge one scripts block, wire Claude Code.
@@ -24,22 +25,48 @@ import { stdin, stdout } from "node:process";
 
 const TEMPLATE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
+const FLAGS = ["yes", "db", "skip-install"];
+const VALUED = ["name", "description"];
 const has = (f) => argv.includes(`--${f}`);
-const opt = (f) => argv.find((a) => a.startsWith(`--${f}=`))?.split("=").slice(1).join("=");
-const positional = argv.filter((a) => !a.startsWith("--"));
+// `--name=value` or `--name value`. The second used to be dropped silently — the project was
+// named after its directory, and the name became a stray positional argument.
+const opt = (f) => {
+  const i = argv.findIndex((a) => a === `--${f}` || a.startsWith(`--${f}=`));
+  if (i === -1) return undefined;
+  const value = argv[i].includes("=") ? argv[i].split("=").slice(1).join("=") : argv[i + 1];
+  if (!value || value.startsWith("--")) die(`--${f} needs a value, e.g. --${f}="…"`);
+  return value;
+};
+const positional = argv.filter((a, i) => !a.startsWith("--") && !VALUED.some((f) => argv[i - 1] === `--${f}`));
 
 const c = { dim: "\x1b[2m", bold: "\x1b[1m", green: "\x1b[32m", red: "\x1b[31m", cyan: "\x1b[36m", off: "\x1b[0m" };
 const say = (s = "") => console.log(s);
 const step = (s) => say(`  ${c.green}✓${c.off} ${s}`);
 const die = (s) => { console.error(`\n  ${c.red}✗${c.off} ${s}\n`); process.exit(1); };
 
+// A typo used to be ignored: `--skip-instal` ran the full install, and a `--dry-run` that does not
+// exist scaffolded for real.
+const unknown = argv.filter((a) => a.startsWith("--") && ![...FLAGS, ...VALUED].includes(a.slice(2).split("=")[0]));
+if (unknown.length)
+  die(`unknown flag ${unknown.join(", ")}. Known: ${[...FLAGS, ...VALUED].map((f) => `--${f}`).join(" ")}`);
+
+// The scaffold ends by running .agents/cli.mjs, whose checks are built on fs.globSync — Node 22.2
+// or newer (its NODE_MIN). Refused here, before anything is written, rather than at step 7 with a
+// half-made project.
+const [major, minor] = process.versions.node.split(".").map(Number);
+if (major < 22 || (major === 22 && minor < 2))
+  die(`needs Node 22.2 or newer — this is ${process.version}. Nothing was written.`);
+
+// Read now, so a flag missing its value is refused before the target directory exists.
+const NAME = opt("name"), DESCRIPTION = opt("description");
+
 // Everything the framework owns, plus the root files tool conventions pin in place. The root
 // AGENTS.md is not here: the template's own is the guide for working on the framework, and a
-// project's comes from .agents/templates/root-guide.md (DECISIONS.md #29).
+// project's comes from .agents/templates/root-guide.md (.agents/docs/DECISIONS.md #29).
 const TEMPLATE_FILES = [".agents", "CLAUDE.md", ".claude/settings.json", "docs", "plan", ".gitattributes"];
 const ROOT_GUIDE = ".agents/templates/root-guide.md";
 // The project's CI, written to .github/workflows/. The template's own workflow tests the framework
-// and runs this script, so a project must never inherit it (DECISIONS.md #28).
+// and runs this script, so a project must never inherit it (.agents/docs/DECISIONS.md #28).
 const CI_WORKFLOW = ".agents/kit/ci/verify.yml";
 // Files that belong to the template repository alone. Never copied into a new directory; removed
 // when scaffolding in place.
@@ -62,29 +89,31 @@ const SCRIPTS = {
   verify: "npm run typecheck && npm run lint && npm run guard && npm run test",
 };
 
-// A tested combination, not the latest of each — .agents/docs/05-WORKFLOW.md §3 says why
-// TypeScript stays on 6 and ESLint on 9.
+// Exact versions: the set the framework's CI last installed and verified — never a range, which
+// hands each new scaffold whatever was newest that day, untested (.agents/docs/DECISIONS.md #36).
+// Bump by editing this list; the scaffold job in CI is what proves it. Why TypeScript stays on 6
+// and ESLint on 9: .agents/docs/05-WORKFLOW.md §3.
 //
-// create-next-app is pinned to the same Next version, not @latest: it writes the files this
-// script then rewrites, so an unpinned one changes what a scaffold contains with no commit here.
-const NEXT = "16.3.4";
+// create-next-app is the same version as next, not @latest: it writes the files this script then
+// rewrites, so an unpinned one changes what a scaffold contains with no commit here.
+const NEXT = "16.4.2";
 const DEPS = {
-  "@hookform/resolvers": "^5.9.1", "@tanstack/react-query": "^5.102.8", "lucide-react": "^0.545.0",
-  next: `^${NEXT}`, "next-intl": "^4.14.2", react: "^19.2.8", "react-dom": "^19.2.8",
-  "react-hook-form": "^7.87.0", sass: "^1.104.0", "server-only": "0.0.1", zod: "^4.5.4",
-  zustand: "^5.0.15",
+  "@hookform/resolvers": "5.9.2", "@tanstack/react-query": "5.104.5", "lucide-react": "0.545.0",
+  next: NEXT, "next-intl": "4.14.9", react: "19.3.1", "react-dom": "19.3.1",
+  "react-hook-form": "7.90.0", sass: "1.106.0", "server-only": "0.0.1", zod: "4.6.7",
+  zustand: "5.0.15",
 };
 const DEV_DEPS = {
-  "@types/node": "^22.10.0", "@types/react": "^19.0.0", "@types/react-dom": "^19.0.0",
-  eslint: "^9.39.5", "eslint-config-next": `^${NEXT}`, typescript: "^6.0.3", vitest: "^5.0.0",
+  "@types/node": "22.20.5", "@types/react": "19.3.0", "@types/react-dom": "19.3.0",
+  eslint: "9.39.5", "eslint-config-next": NEXT, typescript: "6.0.3", vitest: "5.0.5",
 };
 
 // ------------------------------------------------------------------------ ask
 async function ask(target) {
   const interactive = stdin.isTTY && !has("yes");
   const fallback = {
-    name: opt("name") ?? basename(resolve(target)),
-    description: opt("description") ?? "",
+    name: NAME ?? basename(resolve(target)),
+    description: DESCRIPTION ?? "",
     db: has("db"),
   };
   if (!interactive) return fallback;
@@ -266,12 +295,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 }
 `);
 
+// The name is a string literal, not JSX text: "Bob's Shop" as text is a react/no-unescaped-entities
+// error, and a brace opens an expression — either way `npm run verify` failed on the first run.
 writeFileSync(join(root, "src/app/page.tsx"), `// The one honest thing to render before anything is built. Phase 01 replaces this route: the
 // app shell, the feature registry, and a page built with featurePage() (.agents/docs/04-FEATURES.md §2).
 export default function Home() {
   return (
     <main style={{ padding: "3rem", maxWidth: "40rem" }}>
-      <h1>${answers.name.replace(/[<>&]/g, "")}</h1>
+      <h1>{${JSON.stringify(answers.name)}}</h1>
       <p>Nothing is built yet. That is not a bug — it is where the project starts.</p>
       <p>
         <code>plan/01-foundation.md</code> is the one phase the framework prescribes. Mark step
@@ -360,11 +391,16 @@ for (const [dir, body] of Object.entries(LAYERS)) {
 step("src/shared, src/core, src/store indexed (tier 2 lives from commit one)");
 
 // 6. the root guide
+//
+// What the person typed goes in through a function: as a replacement string, `$&` or `$$` in a
+// description is a pattern, not text. No description leaves the placeholder, which says what to
+// write — an empty "What this is" says nothing and looks finished.
 const agentsMd = join(root, "AGENTS.md");
 let guide = readFileSync(agentsMd, "utf8");
 guide = guide
-  .replace(/^# <PROJECT NAME> — working guide$/m, `# ${answers.name} — working guide`)
-  .replace(/\*\*What this is:\*\* <one paragraph[^>]*>/s, `**What this is:** ${answers.description}`)
+  .replace(/^# <PROJECT NAME> — working guide$/m, () => `# ${answers.name} — working guide`)
+  .replace(/\*\*What this is:\*\* <one paragraph[^>]*>/s,
+    (placeholder) => (answers.description ? `**What this is:** ${answers.description}` : placeholder))
   .replace(/^1\. <the thing that blocks the most>$/m, "1. Phase 01 — tokens, env, the error taxonomy, the shared utils, the feature registry.")
   .replace(/^2\. <the next thing>$/m, "2. Choose this project's UI kit with the `plan-kit` playbook, then build it before the first feature screen (`02 §6`).")
   .replace(/^3\. <the next thing>$/m, "3. The first feature screen.")

@@ -36,7 +36,7 @@ Switching workspace on the dashboard changes what the queue screen shows, withou
 
 ## Notes
 Decisions taken while working. Promote anything the next person would be surprised by to
-DECISIONS.md, and say here that you did.
+docs/DECISIONS.md, and say here that you did.
 ```
 
 Sizes are **S / M / L**, never points — S/M/L answers the only question being asked, which is "is
@@ -103,7 +103,8 @@ yet**: a guard that fails on an empty project is a guard people delete.
 
 | Rule | Enforced by |
 |---|---|
-| `01 §1` a feature never imports another feature | `eslint.config.mjs` — one generated zone per feature |
+| `01 §1` a feature never imports another feature | `eslint.config.mjs` — one generated zone per feature, its root included |
+| every lint zone, both ways — what it refuses and what it allows | the framework's own CI — `bin/check-lint.mjs` |
 | `01 §1` `shared/`/`core/`/`store/` never import a feature | same, with `core/i18n/messages.ts` as the one declared exception |
 | `01 §8` nothing outside `server/` imports `server/` | same, plus `import "server-only"` at the top of every server file |
 | `01 §6` no `../` imports | same |
@@ -115,7 +116,10 @@ yet**: a guard that fails on an empty project is a guard people delete.
 | `03 §2` an error code that does not exist | `ApiErrorCode` derived from `API_ERROR_CODES` |
 | `04 §2` a route that ignores its feature flag | `featurePage()` is the only way a page is built |
 | `04 §3` a feature with no index | `guard` |
-| every `§N` citation resolves, and one in a framework file names its document | `guard` |
+| every citation resolves — `NN §N`, `rule NN N`, and a `§N` in a framework file, which must name its document | `guard` |
+| every decision citation names its record and resolves — `.agents/docs/DECISIONS.md #N` (the framework's) or `docs/DECISIONS.md #N` (yours) | `guard` |
+| every `.agents/` path a playbook, template, rulebook file or index names exists, in that exact case | `guard` |
+| the code in `.agents/templates/` type-checks and lints in a real project | the framework's own CI — `bin/check-templates.mjs` |
 | the plan index, the phase files and `NOW.md` agree (§2) | `guard`, and a `pre-commit` hook running it per commit — see below |
 | a skill differs between agents, or is missing from one (§4) | `guard` |
 | a `SKILL.md` frontmatter key Claude Code does not recognise, and so silently ignores (§4) | `guard` |
@@ -127,7 +131,7 @@ yet**: a guard that fails on an empty project is a guard people delete.
 script), so `git commit` refuses one that leaves the four things in the table above disagreeing —
 before the drift is several commits old and someone has to reconstruct what was actually in
 flight. `git commit --no-verify` still skips it, same as any hook; CI running the full guard on
-every push is the check that cannot be skipped (`docs/DECISIONS.md #24`).
+every push is the check that cannot be skipped (`.agents/docs/DECISIONS.md #24`).
 
 **Deliberately not mechanized:** naming, co-location, and "does `shared/` already have something
 that does this" (02 §5, steps 1–3 and 7). Those need judgement, and a guard that is wrong often
@@ -146,7 +150,8 @@ recent majors broke together and both fail at *config load* with a stack trace: 
 (`typescript-eslint does not support TS 7.0`, so `eslint-config-next` cannot load) and ESLint 10
 (`eslint-plugin-react` crashes inside `eslint-config-next`). Re-test both before bumping either.
 "Use the latest" is right about the libraries you write against and wrong about a lint toolchain,
-where four packages have to agree.
+where four packages have to agree. So the scaffolder installs exact versions — the set the
+framework's CI last proved — and a project moves on from there under its own lockfile.
 
 ## 3a. Read a section, not a file
 
@@ -155,6 +160,7 @@ node .agents/cli.mjs rule            # every section, one line each — the map
 node .agents/cli.mjs rule 02         # that file's sections
 node .agents/cli.mjs rule 02 7       # §7, and nothing else
 node .agents/cli.mjs rule -q tokens  # which sections mention it
+node .agents/cli.mjs rule 02 -q grid # the same, in 02 alone
 ```
 
 **A citation is an address; this is what fetches it.** `02 §7` is ~400 words. `02-COMPONENTS.md`
@@ -176,8 +182,8 @@ which section you want.
 **Change, add or delete a skill and both agents must see it in the same commit.** A stale copy is
 worse than a missing one: an agent follows it confidently and does the superseded thing.
 
-Two agents are supported — Claude Code and Codex (`docs/DECISIONS.md #26`). `.agents/skills/` is
-canonical, and `AGENTS.md` is canonical.
+Two agents are supported — Claude Code and Codex (`.agents/docs/DECISIONS.md #26`).
+`.agents/skills/` is canonical, and `AGENTS.md` is canonical.
 
 | Agent | Reads `AGENTS.md` | Finds playbooks in | Runs one as | Needs wiring |
 |---|---|---|---|---|
@@ -206,11 +212,12 @@ npm run sync:agents    # the .claude/skills mirror, the CLAUDE.md shims, orphan 
 place is discarded.
 
 **Frontmatter is held to an allowlist** — the keys Claude Code documents, listed in
-`.agents/cli.mjs` as `FRONTMATTER_KEYS` (`docs/DECISIONS.md #30`). Claude Code ignores any other key
-with no error, so a misspelling silently undoes what the key was for: `disable_model_invocation`,
-with underscores, leaves a skill the model can invoke. A key borrowed from a *rules* file — `globs`,
-`alwaysApply` — does nothing at all. `sync:agents` will not repair this one — it cannot guess what
-you meant, and claiming "in sync" over it would be a silent success.
+`.agents/cli.mjs` as `FRONTMATTER_KEYS` (`.agents/docs/DECISIONS.md #30`). Claude Code ignores any
+other key with no error, so a misspelling silently undoes what the key was for:
+`disable_model_invocation`, with underscores, leaves a skill the model can invoke. A key borrowed
+from a *rules* file — `globs`, `alwaysApply` — does nothing at all. `sync:agents` will not repair
+this one — it cannot guess what you meant, and claiming "in sync" over it would be a silent
+success.
 
 `name` and `description` are the only two both agents read; the rest are Claude Code's, and Codex
 ignores them. So **keep the body carrying the instruction, never the frontmatter**: a playbook that
@@ -273,7 +280,9 @@ nothing · it prints the one line that undoes it, including the files it *added*
 
 `docs/` is mirrored, extras deleted. `skills/` cannot be — your own playbooks live there too — so
 same-named ones are replaced, yours are never touched, and `version.json` records which playbooks
-the framework shipped so only those are removed when one is dropped upstream.
+the framework shipped so only those are removed when one is dropped upstream. The framework's
+decisions are in `docs/` beside the rulebook, so they are mirrored with it; your project's are
+`docs/DECISIONS.md` at the root, which no update opens.
 
 **How a project adapts is mostly by failing.** A changed rule arrives as a `npm run verify`
 failure naming the file and the section. What a guard cannot see — a convention that changed

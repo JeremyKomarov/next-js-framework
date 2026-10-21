@@ -22,7 +22,7 @@ Enforces `02 §1`–§3.
    modal, table, badge, toast, empty state — goes in `shared/` on first use, with its variants.
    Only something that names an entity or a workflow stays feature-local. Say which you chose and
    why in one line before scaffolding.
-3. Create `<target>/components/$1/` from `.agents/templates/component/`, renaming `SummaryCard` to `$1`.
+3. Create `<target>/components/$1/` from `.agents/templates/component.md`, renaming `SummaryCard` to `$1`.
    **Four different casings, and a blind find-and-replace gets them wrong** — the template uses a
    two-word name precisely so they are visibly distinct. For `$1 = InvoiceRow`:
 

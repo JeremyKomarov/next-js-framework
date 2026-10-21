@@ -9,8 +9,9 @@
 # (05-WORKFLOW.md §2) says the plan and the work move together: the commit itself.
 #
 # Hooks run locally and `git commit --no-verify` skips them by design — that is not this
-# framework's problem to solve twice. CI already runs the full guard on every push (docs/DECISIONS.md
-# #22); this is the earlier, cheaper copy of that one check, not a replacement for it.
+# framework's problem to solve twice. CI already runs the full guard on every push
+# (.agents/docs/DECISIONS.md #22); this is the earlier, cheaper copy of that one check, not a
+# replacement for it.
 node .agents/cli.mjs check --only=plan
 status=$?
 
