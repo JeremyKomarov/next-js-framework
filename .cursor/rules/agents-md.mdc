@@ -1,0 +1,15 @@
+---
+description: Always read the AGENTS.md of the directory you are about to write in.
+alwaysApply: true
+---
+
+Before creating any component, hook, util, type or API call, read the `AGENTS.md` of the
+directory you are about to write in, then `src/shared/AGENTS.md`. They inventory what already
+exists; something that does 80% of it is a thing to extend, not to build beside.
+
+After creating one, update that same `AGENTS.md` in the same change.
+
+The rules themselves are addressed as `<NN> §N`. Read one section, not a whole file:
+`node .agents/cli.mjs rule 02 7`. `node .agents/cli.mjs rule` lists every section.
+
+This file holds no rules of its own. `AGENTS.md` is canonical.

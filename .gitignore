@@ -1,0 +1,28 @@
+# Dependencies and build output
+node_modules/
+.next/
+out/
+build/
+next-env.d.ts
+
+# Environment
+.env*
+!.env.example
+
+# Editor and OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Test and cache
+coverage/
+*.tsbuildinfo
+
+# Agent skill mirrors (.claude/skills, .cursor/skills, .grok/skills, .windsurf/skills and
+# .gemini/commands) are NOT ignored. A symlinked mirror is 17 bytes and makes a fresh clone work
+# immediately; a copy-fallback mirror is caught by `npm run guard:agents` if it ever diverges. That
+# guard is the reason committing them is safe.
+#
+# The marker directory is what says an agent is in use. To stop supporting one, delete its whole
+# directory — the guard stops looking for it, with no list to edit anywhere.

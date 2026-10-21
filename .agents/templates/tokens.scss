@@ -1,0 +1,230 @@
+// core/styles/tokens.scss — every design token, real values. Copy this file in whole for phase
+// 01.2 (plan/01-foundation.md), then make it yours: re-hue the brand ramp, keep everything else
+// unless you have a specific reason not to (DECISIONS.md #25).
+//
+// The framework prescribes the GROUPS (02-COMPONENTS.md §7); these are real starting values, not
+// a shape to fill in from nothing. Re-hue the brand ramp — rotate its hue, keep its lightness
+// steps — and the rest of the app stays in contrast, because every semantic colour and every
+// surface is built from the ramps, never a one-off hex.
+//
+// Imported ONCE, in the root layout. Nowhere else may contain a hex colour — `npm run guard`
+// fails the build on one (02-COMPONENTS.md §7).
+:root {
+  // ---------------------------------------------------------------- brand ramp
+  // Indigo-violet, hue ~ 243°. To re-hue: open each step in a colour tool, rotate the hue, keep
+  // the lightness and saturation. The app does not need touching — every component reads
+  // --surface-brand, --focus-ring, etc., never a ramp step directly.
+  --brand-50: #eef2ff;
+  --brand-100: #e0e7ff;
+  --brand-200: #c7d2fe;
+  --brand-300: #a5b4fc;
+  --brand-400: #818cf8;
+  --brand-500: #6366f1;
+  --brand-600: #4f46e5;
+  --brand-700: #4338ca;
+  --brand-800: #3730a3;
+  --brand-900: #312e81;
+  --brand-950: #1e1b4b;
+
+  // ------------------------------------------------------------- neutral ramp
+  // Cool grey, tuned to sit next to the brand ramp without fighting it. This is what most of a
+  // screen is made of — text, borders, chrome — so it carries more of the "does this look
+  // considered" verdict than the brand colour does.
+  --neutral-50: #f8fafc;
+  --neutral-100: #f1f5f9;
+  --neutral-200: #e2e8f0;
+  --neutral-300: #cbd5e1;
+  --neutral-400: #94a3b8;
+  --neutral-500: #64748b;
+  --neutral-600: #475569;
+  --neutral-700: #334155;
+  --neutral-800: #1e293b;
+  --neutral-900: #0f172a;
+  --neutral-950: #020617;
+
+  // ------------------------------------------------------------------ surfaces
+  // The page is a soft neutral, not pure white — a card sitting on --surface-page is what reads
+  // as "raised" without needing a shadow to prove it.
+  --surface-page: var(--neutral-50);
+  --surface-card: #ffffff;
+  --surface-soft: var(--neutral-100);
+  --surface-brand: var(--brand-600);
+
+  // ---------------------------------------------------------------------- text
+  --text-primary: var(--neutral-900);
+  --text-secondary: var(--neutral-600);
+  --text-muted: var(--neutral-400);
+  --text-on-brand: #ffffff;
+
+  // ------------------------------------------------------------------- borders
+  --border-subtle: var(--neutral-200);
+  --border-strong: var(--neutral-300);
+  --focus-ring: var(--brand-500);
+
+  // ------------------------------------------------------------ semantic status
+  // A quad each, all sharing one shape: -text (on --surface-page, AA at body size), -strong (icon
+  // or border needing more emphasis), -surface (the tinted background), -border (the subtle edge
+  // when the surface alone isn't enough). Never used decoratively — a status colour appearing
+  // where it does not mean something is what makes the real ones stop registering.
+  --positive-text: #065f46;
+  --positive-strong: #059669;
+  --positive-surface: #ecfdf5;
+  --positive-border: #a7f3d0;
+
+  --warning-text: #92400e;
+  --warning-strong: #d97706;
+  --warning-surface: #fffbeb;
+  --warning-border: #fde68a;
+
+  --critical-text: #991b1b;
+  --critical-strong: #dc2626;
+  --critical-surface: #fef2f2;
+  --critical-border: #fecaca;
+
+  --info-text: #1e40af;
+  --info-strong: #2563eb;
+  --info-surface: #eff6ff;
+  --info-border: #bfdbfe;
+
+  // ------------------------------------------------------------------ typography
+  // A system stack first, so text renders in the platform's own font with zero network cost;
+  // "Inter" is first in the list for the common case a project loads it with next/font — nothing
+  // breaks if it never does.
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+
+  --text-xs: 0.75rem; // 12px — metadata, timestamps, badge text
+  --text-sm: 0.875rem; // 14px — secondary body text, form helper text
+  --text-md: 1rem; // 16px — the default body size; never smaller on a control (02 §8)
+  --text-lg: 1.125rem; // 18px — emphasised body, card titles
+  --text-xl: 1.375rem; // 22px — section headings
+  --text-2xl: 1.75rem; // 28px — page titles
+  --text-3xl: 2.25rem; // 36px — hero-scale numbers, empty-state headlines
+
+  // -------------------------------------------------------------------- spacing
+  // Linear, 4px per step — one multiplication table, not a curve to memorise.
+  --space-1: 0.25rem; // 4px
+  --space-2: 0.5rem; // 8px
+  --space-3: 0.75rem; // 12px
+  --space-4: 1rem; // 16px
+  --space-5: 1.25rem; // 20px
+  --space-6: 1.5rem; // 24px
+  --space-7: 1.75rem; // 28px
+  --space-8: 2rem; // 32px
+  --space-9: 2.25rem; // 36px
+  --space-10: 2.5rem; // 40px
+  --space-11: 2.75rem; // 44px — the touch-target minimum (02 §7)
+  --space-12: 3rem; // 48px
+  --space-13: 3.25rem; // 52px
+  --space-14: 3.5rem; // 56px
+  --space-15: 3.75rem; // 60px
+  --space-16: 4rem; // 64px
+
+  // ------------------------------------------------------------- radius & shadow
+  --radius-xs: 0.25rem; // 4px — checkboxes, small chips
+  --radius-sm: 0.375rem; // 6px — inputs, buttons
+  --radius-md: 0.5rem; // 8px — cards, popovers
+  --radius-lg: 0.75rem; // 12px — modals, large panels
+  --radius-xl: 1rem; // 16px — hero cards, full-bleed panels
+  --radius-pill: 999px; // badges, pill buttons, avatars
+
+  // Cool-neutral shadows (matched to --neutral-900), not pure black — a black shadow at low
+  // opacity reads slightly warm against a cool page and looks like dirt instead of elevation.
+  --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.06);
+  --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.1), 0 1px 2px -1px rgb(15 23 42 / 0.06);
+  --shadow-md: 0 4px 12px -2px rgb(15 23 42 / 0.12), 0 2px 4px -2px rgb(15 23 42 / 0.06);
+
+  // ------------------------------------------------------------------------ layout
+  --sidebar-width: 17rem; // 272px — wide enough for a label plus a count badge, not a guess
+  --topbar-height: 4rem; // 64px
+  --control-height-sm: 2rem; // 32px
+  --control-height-md: 2.5rem; // 40px — the default; meets the 44px coarse-pointer target with padding
+  --control-height-lg: 3rem; // 48px
+  --content-max-width: 72rem; // 1152px — comfortable for a dashboard; a form screen constrains further itself
+
+  // -------------------------------------------------------------------- z-layers
+  // Named and ordered in one place so two components never have to guess who is on top.
+  --layer-dropdown: 20;
+  --layer-sticky: 30;
+  --layer-overlay: 40;
+  --layer-modal: 50;
+  --layer-toast: 60;
+
+  // ---------------------------------------------------------------------- motion
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 320ms;
+}
+
+// -------------------------------------------------------------------------- reset
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  tab-size: 4;
+}
+
+// -------------------------------------------------------------------------- base
+body {
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--surface-page);
+  -webkit-font-smoothing: antialiased;
+}
+
+img,
+picture,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+// Every interactive element gets the same focus treatment by default; a component overrides it
+// with a shape-appropriate variant (e.g. an inset ring on a filled button) rather than removing
+// it (02-COMPONENTS.md §7).
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+// -------------------------------------------------------------- reduced motion
+// Motion drops to near-zero rather than vanishing outright — a 1ms transition still fires its
+// `transitionend` handler; `none` can silently strand a component that relies on one to update
+// state (02-COMPONENTS.md §7).
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

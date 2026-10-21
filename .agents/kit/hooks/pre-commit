@@ -1,0 +1,23 @@
+#!/bin/sh
+# Installed by `node .agents/cli.mjs hooks` (npm's `postinstall`) via `git config core.hooksPath`,
+# not by copying into the untracked .git/hooks/ — so every clone gets it with no husky, no
+# symlink, nothing to remember. 05-WORKFLOW.md §3.
+#
+# `npm run verify` catches plan drift too, but only when someone remembers to run it, which is
+# usually right before a PR — by then the plan may have said nothing was in flight for several
+# commits. This runs the one check that can be checked per commit, at the point the workflow rule
+# (05-WORKFLOW.md §2) says the plan and the work move together: the commit itself.
+#
+# Hooks run locally and `git commit --no-verify` skips them by design — that is not this
+# framework's problem to solve twice. CI already runs the full guard on every push (docs/DECISIONS.md
+# #22); this is the earlier, cheaper copy of that one check, not a replacement for it.
+node .agents/cli.mjs check --only=plan
+status=$?
+
+if [ $status -ne 0 ]; then
+  echo ""
+  echo "pre-commit: plan/ disagrees with itself (05-WORKFLOW.md §2) — fix it, or"
+  echo "'git commit --no-verify' to skip this once."
+fi
+
+exit $status

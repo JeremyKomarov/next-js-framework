@@ -1,0 +1,27 @@
+# Line endings are a correctness problem here, not a style one.
+#
+# The guards compare file contents byte for byte — a skill mirror against its canonical copy, the
+# generated playbook table against the one in AGENTS.md. With core.autocrlf=true and no rule here,
+# Windows checks every file out as CRLF, the comparison never matches, and `npm run guard:agents`
+# fails on a clean tree with nothing wrong. `npm run sync:agents` then writes LF, git converts it
+# back on the next checkout, and the failure returns for good.
+#
+# So: everything textual is LF in the working tree as well as in the repository.
+* text=auto eol=lf
+
+# Binary — never touched, whatever the platform.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.avif binary
+*.ico  binary
+*.woff  binary
+*.woff2 binary
+*.ttf  binary
+*.otf  binary
+*.pdf  binary
+
+# Lockfiles are generated; a diff of one is noise in review.
+package-lock.json  linguist-generated=true -diff

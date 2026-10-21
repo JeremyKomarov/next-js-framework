@@ -1,0 +1,18 @@
+{
+  "name": "ai-development",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A Next.js project template for coding agents: the conventions, the enforcement that makes them stick, and eleven repeatable playbooks.",
+  "type": "module",
+  "engines": { "node": ">=20.11" },
+  "scripts": {
+    "create": "node bin/create.mjs",
+    "rule": "node .agents/cli.mjs rule",
+    "guard": "node .agents/cli.mjs check",
+    "sync:agents": "node .agents/cli.mjs sync",
+    "hooks": "node .agents/cli.mjs hooks",
+    "postinstall": "node .agents/cli.mjs hooks",
+    "test": "node --test .agents/cli.test.mjs",
+    "verify": "npm run guard && npm run test"
+  }
+}

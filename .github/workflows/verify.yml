@@ -1,0 +1,54 @@
+# The framework's own gate. `npm run verify` is what every project built from this is told to run
+# before a PR (.agents/docs/05-WORKFLOW.md §3); running it here is the framework holding itself to
+# the rule it ships.
+#
+# All three platforms are in the matrix on purpose, not for completeness. Each one breaks this
+# framework differently, and every cross-platform defect it has hit was found by running it
+# somewhere other than Linux (docs/DECISIONS.md #19):
+#
+#   Windows  absolute paths out of globSync, CRLF breaking a byte-for-byte comparison, symlinks
+#            refused without developer mode, npm/npx as .cmd shims Node will not spawn directly.
+#   macOS    a case-insensitive filesystem by default. The skill mirrors are compared by path and
+#            by hash, so anything that assumes `SKILL.md` and `skill.md` are two files is wrong
+#            here and right on Linux. Running the whole suite on APFS is the check.
+#   Linux    the only one where all of the above are invisible.
+#
+# A guard that is only ever green on Linux is a guard with a blind spot the size of most of its
+# users.
+name: verify
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # No dependencies to install — the CLI and its tests are stdlib-only, which is what makes
+      # this job seconds rather than minutes.
+      - run: npm run guard
+      - run: npm run test
+
+      # The scaffolder is the one thing prose cannot check: it runs create-next-app, merges a
+      # package.json, rewrites entry files and wires the agents. Every bug found in it so far was
+      # found by running it. --skip-install keeps this to the scaffold, not an npm install.
+      - name: scaffold a project and guard it
+        shell: bash
+        run: |
+          node bin/create.mjs "$RUNNER_TEMP/scaffolded" --yes \
+            --name="Scaffold Check" --description="Built by CI." \
+            --agents=claude,codex,cursor,gemini,opencode --skip-install
+          cd "$RUNNER_TEMP/scaffolded"
+          node .agents/cli.mjs check
+          node .agents/cli.mjs rule 02 7

@@ -1,0 +1,432 @@
+#!/usr/bin/env node
+// Scaffold a project from this framework. One command, three questions, a repository that
+// `npm run dev` and `npm run verify` both work in.
+//
+//   node bin/create.mjs my-app           into a new directory
+//   node bin/create.mjs .                in place, in this clone of the template
+//   node bin/create.mjs . --yes          non-interactive, all defaults
+//
+// Run it from the template, not from npm — it is deliberately not published (DECISIONS.md #21).
+//
+// Flags: --yes  --name=<n>  --description=<d>  --db  --agents=claude,codex  --skip-install
+//
+// The framework itself is .agents/ and nothing else, so scaffolding is: run create-next-app,
+// copy .agents/ and the root governance files in, merge one scripts block, wire the agents.
+// This file is deleted from a scaffolded project — it belongs to the template, not to you.
+import {
+  readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, cpSync, renameSync,
+} from "node:fs";
+import { execFileSync, execSync } from "node:child_process";
+import { join, resolve, dirname, basename } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createInterface } from "node:readline/promises";
+import { stdin, stdout } from "node:process";
+
+const TEMPLATE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const argv = process.argv.slice(2);
+const has = (f) => argv.includes(`--${f}`);
+const opt = (f) => argv.find((a) => a.startsWith(`--${f}=`))?.split("=").slice(1).join("=");
+const positional = argv.filter((a) => !a.startsWith("--"));
+
+const c = { dim: "\x1b[2m", bold: "\x1b[1m", green: "\x1b[32m", red: "\x1b[31m", cyan: "\x1b[36m", off: "\x1b[0m" };
+const say = (s = "") => console.log(s);
+const step = (s) => say(`  ${c.green}✓${c.off} ${s}`);
+const die = (s) => { console.error(`\n  ${c.red}✗${c.off} ${s}\n`); process.exit(1); };
+
+// Everything the framework owns, plus the root files tool conventions pin in place.
+const TEMPLATE_FILES = [".agents", "AGENTS.md", "CLAUDE.md", "docs", "plan", ".gitattributes"];
+
+const SCRIPTS = {
+  dev: "next dev",
+  build: "next build",
+  start: "next start",
+  typecheck: "tsc --noEmit",
+  lint: "eslint .",
+  test: "vitest run",
+  "test:watch": "vitest",
+  rule: "node .agents/cli.mjs rule",
+  guard: "node .agents/cli.mjs check",
+  "sync:agents": "node .agents/cli.mjs sync",
+  "update:framework": "node .agents/cli.mjs update",
+  hooks: "node .agents/cli.mjs hooks",
+  postinstall: "node .agents/cli.mjs hooks",
+  verify: "npm run typecheck && npm run lint && npm run guard && npm run test",
+};
+
+// A tested combination, not the latest of each — .agents/docs/05-WORKFLOW.md §3 says why
+// TypeScript stays on 6 and ESLint on 9.
+const DEPS = {
+  "@hookform/resolvers": "^5.9.1", "@tanstack/react-query": "^5.102.8", "lucide-react": "^0.545.0",
+  next: "^16.3.4", "next-intl": "^4.14.2", react: "^19.2.8", "react-dom": "^19.2.8",
+  "react-hook-form": "^7.87.0", sass: "^1.104.0", "server-only": "0.0.1", zod: "^4.5.4",
+  zustand: "^5.0.15",
+};
+const DEV_DEPS = {
+  "@types/node": "^22.10.0", "@types/react": "^19.0.0", "@types/react-dom": "^19.0.0",
+  eslint: "^9.39.5", "eslint-config-next": "^16.3.4", typescript: "^6.0.3", vitest: "^5.0.0",
+};
+
+// name : the marker directory that tells `sync` this agent is in use. Codex and opencode read
+// AGENTS.md and .agents/skills/ natively, so they need no marker and no files at all — listing
+// them is how a person confirms they are covered, not a thing to configure.
+//
+// Everything each marker implies — the mirror, the shims, the Cursor rule, Gemini's settings — is
+// written by `.agents/cli.mjs sync`, which runs at the end of this script. This map is a roster,
+// not a second copy of the wiring rules (.agents/docs/05-WORKFLOW.md §4).
+const AGENTS = {
+  claude:   { marker: ".claude" },
+  codex:    {},
+  cursor:   { marker: ".cursor" },
+  gemini:   { marker: ".gemini" },
+  opencode: {},
+};
+const DEFAULT_AGENTS = Object.keys(AGENTS).join(",");
+
+// ------------------------------------------------------------------------ ask
+async function ask(target) {
+  const interactive = stdin.isTTY && !has("yes");
+  const fallback = {
+    name: opt("name") ?? basename(resolve(target)),
+    description: opt("description") ?? "",
+    db: has("db"),
+    agents: opt("agents") ?? DEFAULT_AGENTS,
+  };
+  if (!interactive) return fallback;
+
+  const rl = createInterface({ input: stdin, output: stdout });
+  const q = async (label, def) => {
+    const answer = (await rl.question(`  ${label} ${c.dim}(${def})${c.off} `)).trim();
+    return answer || def;
+  };
+  say();
+  const name = await q("Project name", fallback.name);
+  const description = await q("One sentence on what it is", fallback.description || "TODO — one sentence.");
+  const db = (await q("Does it have a database? y/N", fallback.db ? "y" : "n")).toLowerCase().startsWith("y");
+  const agents = await q(`Agents ${c.dim}[${Object.keys(AGENTS).join(" ")}]${c.off}`, fallback.agents);
+  rl.close();
+  return { name, description, db, agents };
+}
+
+// -------------------------------------------------------------------- helpers
+const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
+const writeJson = (p, v) => writeFileSync(p, JSON.stringify(v, null, 2) + "\n");
+const sorted = (o) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)));
+
+function run(cmd, args, cwd) {
+  // On Windows npm and npx are .cmd shims, and since the CVE-2024-27980 fix Node refuses to
+  // spawn one without a shell. So Windows gets a single quoted command string — an args array
+  // plus shell:true is the combination that warns (DEP0190) and would mangle "@/*".
+  try {
+    if (process.platform === "win32") {
+      const quote = (a) => (/^[\w.@/:\\-]+$/.test(a) ? a : `"${a.replace(/"/g, '\\"')}"`);
+      execSync([cmd, ...args].map(quote).join(" "), { cwd, stdio: "inherit" });
+    } else {
+      execFileSync(cmd, args, { cwd, stdio: "inherit" });
+    }
+  }
+  catch { die(`\`${cmd} ${args.join(" ")}\` failed. Nothing was rolled back — read the output above.`); }
+}
+
+// create-next-app refuses any directory holding files it does not recognise, and this one holds
+// AGENTS.md, .agents/ and plan/. So it scaffolds into a subdirectory and the result is moved up.
+function scaffoldNext(root) {
+  const staging = join(root, "next-app-tmp");   // not ".next-app": npm rejects a name starting with "."
+  rmSync(staging, { recursive: true, force: true });
+
+  run("npx", ["--yes", "create-next-app@latest", "next-app-tmp", "--ts", "--src-dir", "--app",
+              "--no-tailwind", "--no-eslint", "--import-alias", "@/*", "--use-npm",
+              "--skip-install", "--no-turbopack", "--no-git"], root);
+  if (!existsSync(join(staging, "package.json"))) die("create-next-app produced no package.json");
+
+  for (const entry of readdirSync(staging)) {
+    const from = join(staging, entry), to = join(root, entry);
+    // Our .gitignore is the comprehensive one; keep it and take any line Next adds that we lack.
+    if (entry === ".gitignore" && existsSync(to)) {
+      const ours = readFileSync(to, "utf8").split("\n");
+      const extra = readFileSync(from, "utf8").split("\n")
+        .filter((l) => l.trim() && !l.startsWith("#") && !ours.some((o) => o.trim() === l.trim()));
+      if (extra.length) writeFileSync(to, readFileSync(to, "utf8").replace(/\n*$/, "\n") + `\n# From create-next-app\n${extra.join("\n")}\n`);
+      continue;
+    }
+
+    // Next 16 writes its own AGENTS.md, and `next dev` re-adds the block on every run. Ours is
+    // canonical and carries the lookup protocol, so the two are merged rather than one winning:
+    // Next's block is appended, where its own markers let it rewrite in place forever after.
+    if (entry === "AGENTS.md" && existsSync(to)) {
+      const theirs = readFileSync(from, "utf8").trim();
+      const ours = readFileSync(to, "utf8").replace(/\n*$/, "\n");
+      if (theirs) writeFileSync(to, `${ours}\n---\n\n${theirs}\n`);
+      continue;
+    }
+
+    rmSync(to, { recursive: true, force: true });
+    renameSync(from, to);
+  }
+  rmSync(staging, { recursive: true, force: true });
+}
+
+// ------------------------------------------------------------------------ main
+const targetArg = positional[0];
+if (!targetArg) die(`no target directory.\n\n    node bin/create.mjs my-app\n    node bin/create.mjs .          ${c.dim}in place, in this clone${c.off}`);
+
+const root = resolve(process.cwd(), targetArg);
+const inPlace = root === TEMPLATE;
+
+say(`\n  ${c.bold}create${c.off} ${c.dim}${readJson(join(TEMPLATE, ".agents/version.json")).version}${c.off}`);
+
+if (!inPlace) {
+  if (existsSync(root) && readdirSync(root).some((f) => !["\.git", ".git", ".gitignore", "README.md", "LICENSE"].includes(f)))
+    die(`${root} is not empty. Pick an empty directory, or cd into it and run with \`.\``);
+  mkdirSync(root, { recursive: true });
+}
+
+const answers = await ask(root);
+const wanted = answers.agents.split(/[,\s]+/).map((a) => a.trim().toLowerCase()).filter(Boolean);
+for (const a of wanted) if (!AGENTS[a]) die(`unknown agent "${a}". Known: ${Object.keys(AGENTS).join(", ")}`);
+
+say();
+
+// 1. the framework's files
+if (!inPlace) {
+  for (const f of TEMPLATE_FILES) {
+    if (existsSync(join(TEMPLATE, f))) cpSync(join(TEMPLATE, f), join(root, f), { recursive: true });
+  }
+  if (existsSync(join(TEMPLATE, ".gitignore")) && !existsSync(join(root, ".gitignore")))
+    cpSync(join(TEMPLATE, ".gitignore"), join(root, ".gitignore"));
+  step(`framework copied into ${basename(root)}/`);
+}
+
+// 2. the app
+scaffoldNext(root);
+step("next app scaffolded (typescript, src/, app router, no tailwind)");
+
+// 3. the kit — configs the framework owns, overwriting what create-next-app wrote
+for (const f of ["eslint.config.mjs", "tsconfig.json", "vitest.config.mts"])
+  cpSync(join(root, ".agents/kit", f), join(root, f));
+rmSync(join(root, "eslint.config.js"), { force: true });
+rmSync(join(root, ".eslintrc.json"), { force: true });
+
+const pkg = readJson(join(root, "package.json"));
+pkg.name = answers.name.toLowerCase().replace(/[^a-z0-9-_]+/g, "-").replace(/^-+|-+$/g, "") || "app";
+pkg.private = true;
+pkg.scripts = { ...pkg.scripts, ...SCRIPTS };
+pkg.dependencies = sorted({ ...pkg.dependencies, ...DEPS });
+pkg.devDependencies = sorted({ ...pkg.devDependencies, ...DEV_DEPS });
+writeJson(join(root, "package.json"), pkg);
+step("kit installed — verify, guard, sync:agents, update:framework wired");
+
+// 4. the app's entry files, framework-shaped
+//
+// create-next-app's defaults do not survive `npm run verify`: the layout uses `LayoutProps`, a
+// global that only exists once `.next/types` has been generated by a build. Its splash page is
+// also the exact defect the rulebook forbids — a screen that looks finished and is not. So both
+// are replaced with the honest minimum, and its CSS with SCSS (02-COMPONENTS.md §7).
+rmSync(join(root, "src/app/globals.css"), { force: true });
+rmSync(join(root, "src/app/page.module.css"), { force: true });
+for (const svg of ["file", "globe", "next", "vercel", "window"])
+  rmSync(join(root, `public/${svg}.svg`), { force: true });
+
+writeFileSync(join(root, "src/app/globals.scss"), `// Phase 01.2 replaces this with core/styles/tokens.scss — copy .agents/templates/tokens.scss in
+// whole, then re-hue its brand ramp. It owns every token and is the only file allowed to contain
+// a hex colour (.agents/docs/02-COMPONENTS.md §7).
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.5;
+}
+`);
+
+writeFileSync(join(root, "src/app/layout.tsx"), `import type { Metadata, Viewport } from "next";
+import type { ReactNode } from "react";
+import "./globals.scss";
+
+export const metadata: Metadata = {
+  title: ${JSON.stringify(answers.name)},
+  description: ${JSON.stringify(answers.description)},
+};
+
+export const viewport: Viewport = { width: "device-width", initialScale: 1 };
+
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="en">
+      <body>{children}</body>
+    </html>
+  );
+}
+`);
+
+writeFileSync(join(root, "src/app/page.tsx"), `// The one honest thing to render before anything is built. Phase 01 replaces this route: the
+// app shell, the feature registry, and a page built with featurePage() (.agents/docs/04-FEATURES.md §2).
+export default function Home() {
+  return (
+    <main style={{ padding: "3rem", maxWidth: "40rem" }}>
+      <h1>${answers.name.replace(/[<>&]/g, "")}</h1>
+      <p>Nothing is built yet. That is not a bug — it is where the project starts.</p>
+      <p>
+        <code>plan/01-foundation.md</code> is the one phase the framework prescribes. Mark step
+        01.1 in progress, write <code>plan/NOW.md</code>, and begin.
+      </p>
+    </main>
+  );
+}
+`);
+step("app entry replaced — no splash screen pretending the app exists");
+
+// 5. the three layer indexes, so tier 2 exists from the first commit
+const LAYERS = {
+  "src/shared": `# \`shared/\` — the reuse layer
+
+Check this file before building any component, hook, or util.
+The rules: \`node .agents/cli.mjs rule 02 5\` (does one already exist?), \`rule 02 6\` (does it
+go here?). Fetch the section — do not open the file.
+
+## Components
+
+| Component | What it is | When to use | Replaces |
+|---|---|---|---|
+
+<!-- The baseline kit goes here as it is built: Button, Field, Modal, Alert, Toast, StatusBadge,
+     EmptyState, PageHeader, Icon, AppShell. Shape: .agents/templates/index.md. -->
+
+## Hooks
+
+| Hook | What it does | When to use |
+|---|---|---|
+
+## Utils
+
+| Util | What it does | When to use |
+|---|---|---|
+
+## Promotion rule
+
+A component starts inside a feature. The moment a second feature needs something close,
+generalize it here instead of copying it. Use the \`promote\` playbook.
+
+## Keep this file current
+
+Adding, changing, or removing anything under \`shared/\` updates this file in the same change.
+`,
+  "src/core": `# \`core/\` — app-wide configuration, never UI
+
+**Configuration only.** If it holds runtime state it does not belong here — global stores live in
+\`store/\`, a sibling of \`core/\`. \`core/\` is what the app boots with; \`store/\` is what changes
+while it runs. The rule: \`node .agents/cli.mjs rule 01 3\`.
+
+| Path | What | Rule |
+|---|---|---|
+
+<!-- Filled by phase 01: features.const.ts, env.ts, routes/query-keys/storage-keys, api-error,
+     i18n/messages.ts, styles/tokens.scss. Shape: .agents/templates/index.md. -->
+
+## Keep this table current
+`,
+  "src/store": `# \`store/\` — global client state
+
+Only what more than one feature reads. Split from \`core/\` because \`core/\` is boot-time
+configuration and this is what changes while the app runs.
+The rule: \`node .agents/cli.mjs rule 01 7\`.
+
+| Store | Holds | Read it through |
+|---|---|---|
+
+## What does not belong here
+
+- **Server state.** That is TanStack Query's.
+- **Feature-local state.** \`useState\` first; a feature's own \`store/\` if it must be shared.
+- **The signed-in user.** Resolved on the server, passed down as a prop.
+
+## Keep this file current
+`,
+};
+// The CLAUDE.md shim beside each of these is written by `sync` at step 7, not here — one copy of
+// that text, in the tool that also writes it for every feature index created later.
+for (const [dir, body] of Object.entries(LAYERS)) {
+  mkdirSync(join(root, dir), { recursive: true });
+  writeFileSync(join(root, dir, "AGENTS.md"), body);
+}
+step("src/shared, src/core, src/store indexed (tier 2 lives from commit one)");
+
+// 6. the root guide
+const agentsMd = join(root, "AGENTS.md");
+let guide = readFileSync(agentsMd, "utf8");
+guide = guide
+  .replace(/^# <PROJECT NAME> — working guide$/m, `# ${answers.name} — working guide`)
+  .replace(/\*\*What this is:\*\* <one paragraph[^>]*>/s, `**What this is:** ${answers.description}`)
+  .replace(/^1\. <the thing that blocks the most>$/m, "1. Phase 01 — tokens, env, the error taxonomy, the shared utils, the feature registry.")
+  .replace(/^2\. <the next thing>$/m, "2. The baseline UI kit, before the first feature screen (`02 §6`).")
+  .replace(/^3\. <the next thing>$/m, "3. The first feature screen.")
+  .replace(/^\| <area> \| <Real[^|]*\|$/m,
+    ["| App shell | Does not exist. |",
+     "| Design tokens | Does not exist — phase 01.2. |",
+     "| Shared UI kit | Does not exist. |",
+     `| Database | ${answers.db ? "Planned, confined to `server/db/` (`01 §8`)." : "None. `server/db/` is never created."} |`,
+    ].join("\n"))
+  .replace(/^- <production infrastructure, real credentials, anything with users on it>$/m,
+    "- <production infrastructure, real credentials, anything with users on it — name yours here>");
+writeFileSync(agentsMd, guide);
+step("AGENTS.md filled in");
+
+// 7. the agents
+//
+// This creates marker directories and nothing else. `sync` reads those markers and writes every
+// file each agent actually needs — the skill mirrors, the CLAUDE.md shims beside every AGENTS.md,
+// the Cursor rule, GEMINI.md and .gemini/settings.json. Two agents need no marker: Codex and
+// opencode read AGENTS.md and .agents/skills/ where they already are.
+//
+// Doing it this way rather than writing the files here is the point: `sync` runs again on every
+// change, so the wiring has exactly one implementation and a scaffolded project cannot start out
+// differently from a synced one.
+for (const a of wanted) if (AGENTS[a].marker) mkdirSync(join(root, AGENTS[a].marker), { recursive: true });
+
+run(process.execPath, [join(root, ".agents/cli.mjs"), "sync"], root);
+step(`${wanted.length} agent(s) wired: ${wanted.join(", ")}`);
+
+// 8. the project's own README replaces the framework's
+writeFileSync(join(root, "README.md"), `# ${answers.name}
+
+${answers.description}
+
+\`\`\`sh
+npm install
+npm run dev
+\`\`\`
+
+\`npm run verify\` is the gate — typecheck, lint, the guards and tests. Run it before any PR.
+
+Everything else — where files go, how to add an API call, what is already built — is in
+[\`AGENTS.md\`](AGENTS.md) and the rulebook it points at. Conventions live there once; they do not
+belong in a README twice.
+`);
+
+if (!has("skip-install")) {
+  say(`\n  ${c.dim}installing dependencies…${c.off}\n`);
+  run("npm", ["install"], root);
+}
+
+// 9. the template's own scaffolding is not the project's. `new-project` stays: it is now a
+// four-line playbook pointing back here, and deleting it would only invite the next
+// `update:framework` to copy it in again.
+//
+// cli.test.mjs goes for the same reason plus a sharper one: it tests the framework's CLI against
+// deliberately broken fixtures, so a project that kept it would fail its own docs check on the
+// dangling citations the test exists to assert on. `update:framework` never copies it either.
+try { rmSync(join(root, "bin"), { recursive: true, force: true }); } catch { /* held open on Windows */ }
+rmSync(join(root, ".agents/cli.test.mjs"), { force: true });
+
+say(`\n  ${c.green}Done.${c.off} ${c.dim}${inPlace ? "" : `cd ${basename(root)} && `}npm run dev${c.off}\n`);
+say(`  ${c.cyan}Next${c.off}`);
+say(`    1. ${c.bold}git init && npm run hooks${c.off} — there was no repo for the pre-commit plan`);
+say(`       check to wire itself into during install; this does it now that one exists.`);
+say(`    2. ${c.bold}plan/01-foundation.md${c.off} is the one phase the framework prescribes. Mark 01.1 [~],`);
+say(`       set the phase to "in progress" in the file and plan/00-INDEX.md, and write plan/NOW.md.`);
+say(`    3. Read ${c.bold}AGENTS.md${c.off}. Then ${c.bold}node .agents/cli.mjs rule${c.off} — the rulebook,`);
+say(`       one line per section. Fetch a section; never open the file.`);
+say(`    4. ${c.bold}npm run verify${c.off} before every PR.\n`);
