@@ -1,7 +1,7 @@
 # AI Development
 
 A Next.js project template for coding agents. It ships **no application code** — it ships the
-conventions, the enforcement that makes them stick, and eleven repeatable playbooks.
+conventions, the enforcement that makes them stick, and twelve repeatable playbooks.
 
 Clone it, then run the scaffolder from inside the clone:
 
@@ -62,7 +62,7 @@ never create the folder. **No auth vendor is prescribed.** No Tailwind, no CSS-i
 ```
 .agents/           THE FRAMEWORK — all of it. You read it; you do not edit it.
   docs/            the rulebook. Five files, 38 sections, fetched with `rule`.
-  skills/          the eleven playbooks. Read natively by Codex, mirrored for Claude Code.
+  skills/          the twelve playbooks. Read natively by Codex, mirrored for Claude Code.
   templates/       the component kit, the API chain, the index shapes, the phase shape
   kit/             eslint config, tsconfig, vitest config, the registry test
   cli.mjs          the rule reader, the four checks, the skill sync, the framework updater

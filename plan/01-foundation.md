@@ -15,6 +15,7 @@ mean something.
 - [ ] 01.6 — `core/config/features.const.ts` + `featurePage()` + the disabled shell, and copy `.agents/kit/registry.test.ts` beside the registry (M)
 - [ ] 01.7 — the i18n three-file setup from `.agents/docs/02-COMPONENTS.md` §9 (S)
 - [ ] 01.8 — one real route through `featurePage()`, replacing the placeholder `app/page.tsx` (S)
+- [ ] 01.9 — choose this project's shared UI kit with the `plan-kit` playbook, and plan it as phase 02 (S)
 
 ## Done when
 `npm run verify` passes with tests that actually run, and one route built with `featurePage()`

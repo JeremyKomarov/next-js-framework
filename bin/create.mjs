@@ -274,8 +274,9 @@ go here?). Fetch the section — do not open the file.
 | Component | What it is | When to use | Replaces |
 |---|---|---|---|
 
-<!-- The baseline kit goes here as it is built: Button, Field, Modal, Alert, Toast, StatusBadge,
-     EmptyState, PageHeader, Icon, AppShell. Shape: .agents/templates/index.md. -->
+<!-- Rows are added as components are built. The kit for this project — which primitives are built
+     ahead of the first feature screen — is chosen by the plan-kit playbook (step 01.9) and recorded
+     above this table. Shape: .agents/templates/index.md. -->
 
 ## Hooks
 
@@ -343,12 +344,12 @@ guide = guide
   .replace(/^# <PROJECT NAME> — working guide$/m, `# ${answers.name} — working guide`)
   .replace(/\*\*What this is:\*\* <one paragraph[^>]*>/s, `**What this is:** ${answers.description}`)
   .replace(/^1\. <the thing that blocks the most>$/m, "1. Phase 01 — tokens, env, the error taxonomy, the shared utils, the feature registry.")
-  .replace(/^2\. <the next thing>$/m, "2. The baseline UI kit, before the first feature screen (`02 §6`).")
+  .replace(/^2\. <the next thing>$/m, "2. Choose this project's UI kit with the `plan-kit` playbook, then build it before the first feature screen (`02 §6`).")
   .replace(/^3\. <the next thing>$/m, "3. The first feature screen.")
   .replace(/^\| <area> \| <Real[^|]*\|$/m,
     ["| App shell | Does not exist. |",
      "| Design tokens | Does not exist — phase 01.2. |",
-     "| Shared UI kit | Does not exist. |",
+     "| Shared UI kit | Not chosen yet — `plan-kit`, step 01.9. |",
      `| Database | ${answers.db ? "Planned, confined to `server/db/` (`01 §8`)." : "None. `server/db/` is never created."} |`,
     ].join("\n"))
   .replace(/^- <production infrastructure, real credentials, anything with users on it>$/m,

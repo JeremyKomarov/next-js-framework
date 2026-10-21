@@ -119,9 +119,11 @@ A component starts inside a feature. The moment a second feature needs something
 generalize it here instead of copying it. Use the `promote` playbook.
 ```
 
-Those ten components are the **baseline kit**: they exist before the first feature screen does
-(`02 §6`), each shipping its variants as exported consts and its own
-responsive behaviour (§8). A feature never re-solves either.
+That table is an **example** of a filled-in index, not a list to build. A project's kit is chosen
+from its own screens by the `plan-kit` playbook (`02 §6`) and recorded above the components table
+under `## The kit for this project`. Whatever it holds exists before the first feature screen does,
+each component shipping its variants as exported consts and its own responsive behaviour (§8). A
+feature never re-solves either.
 
 The **`Replaces`** column is the anti-duplication rule in table form. Its cells are
 *prohibitions*, not descriptions — "Never build a second sidebar", "a second icon library". That

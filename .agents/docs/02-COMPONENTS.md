@@ -116,10 +116,12 @@ So every shared component carries its variation surface as exported consts — `
 `*_TONES`, `*_SIZES` — with loading, disabled, error and empty built in rather than left to
 callers. `<Button variant={BUTTON_VARIANTS.danger} />`, never a bespoke red button.
 
-**A project starts with the baseline kit, before its first feature screen:** Button, Field, Modal,
-Alert, Toast, StatusBadge, EmptyState, PageHeader, Icon and the app shell — each with its variants
-and its responsive behaviour. A project built feature-first grows five different buttons and finds
-out in month two.
+**A project starts with its kit, before its first feature screen** — the primitives its first
+screens share, each with its variants and its responsive behaviour. The kit is chosen per project,
+not prescribed: an admin tool needs a `Table` and an `AppShell`, a landing page needs neither. The
+`plan-kit` playbook makes the choice from the planned screens and records it, with what was left
+out, in `shared/AGENTS.md` (`DECISIONS.md #27`). A project built feature-first grows five
+different buttons and finds out in month two.
 
 ## 6a. Icons — one library, one wrapper
 

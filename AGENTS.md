@@ -109,7 +109,7 @@ a playbook already does it.
 
 ## Decisions already made — do not re-open without a reason
 
-Full record: [`docs/DECISIONS.md`](docs/DECISIONS.md), numbered and append-only. Entries 1–26 are
+Full record: [`docs/DECISIONS.md`](docs/DECISIONS.md), numbered and append-only. Entries 1–27 are
 the framework's. The load-bearing ones:
 
 - **SCSS Modules + BEM + tokens** (#1, #2). No Tailwind, no hex outside `tokens.scss`.
@@ -120,7 +120,8 @@ the framework's. The load-bearing ones:
 - **The database is optional and confined to `server/db/`** (#10). No ORM, no repository interface.
 - **Mocks are DTO-parsed, flag-gated, visible, and fail production boot** (#13). No MSW.
 - **`AGENTS.md` is canonical; every other agent file is a pointer** (#14).
-- **A baseline shared UI kit exists before the first feature screen** (#15).
+- **A shared UI kit exists before the first feature screen, chosen per project** (#15, #27).
+  The `plan-kit` playbook picks it from the planned screens; it is not a fixed list.
 - **A rule is fetched by section, not read by file** (#20).
 - **Icons come from `lucide-react`, through `shared/components/Icon` alone** (#23). No hand-drawn
   SVGs, no second icon library, no direct import anywhere else.

@@ -44,11 +44,9 @@ verify` (05-WORKFLOW.md §3).
    not be touched.
 4. **`docs/GLOSSARY.md`** — one entry per project term that does not mean what it looks like.
    Leave it near-empty rather than padding it.
-5. **The baseline UI kit, before the first feature screen** (`02 §6`):
-   Button, Field, Modal, Alert, Toast, StatusBadge, EmptyState, PageHeader, Icon, AppShell — each
-   via the `new-component` playbook, each with its variants as exported consts and its own
-   responsive behaviour. A project built feature-first grows five different buttons and finds out
-   in month two. Fill `src/shared/AGENTS.md` as you go.
+5. **This project's UI kit, before the first feature screen** (`02 §6`) — step 01.9. Run the
+   `plan-kit` playbook: it picks the primitives from the screens this project will actually have,
+   records what it left out, and plans them as a phase. There is no fixed list.
 
 ## Done when
 

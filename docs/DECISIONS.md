@@ -4,7 +4,7 @@ Numbered and append-only. Once a decision is locked here, do not re-open it with
 reason — **add a new numbered entry that supersedes the old one instead of editing history.** A
 superseded entry stays in place, marked, so the reasoning that produced it is still readable.
 
-Entries 1–26 are the framework's own, and arrive with every new project. Number 27 onwards are
+Entries 1–27 are the framework's own, and arrive with every new project. Number 28 onwards are
 yours.
 
 Format: `## N. <the decision, stated as a claim>` · `**Locked YYYY-MM-DD.**` · the reasoning,
@@ -210,7 +210,8 @@ agent. An unknown key is the cheapest way to cause exactly the failure the guard
 
 ## 15. The shared UI kit is built before the first feature, with its variants
 
-**Locked 2026-09-05.**
+**Locked 2026-09-05.** *The fixed list of ten is superseded by #27 — the kit is chosen per project.
+The rest stands.*
 
 Ten primitives — Button, Field, Modal, Alert, Toast, StatusBadge, EmptyState, PageHeader, Icon,
 AppShell — exist in `shared/` before a feature screen is written, each carrying its variation
@@ -588,3 +589,26 @@ table was a second copy of something already in context, in the one file loaded 
 
 Adding a third agent means adding an entry that supersedes this one, and signing up to verify its
 paths on every release.
+
+## 27. The shared kit is chosen per project, from its screens
+
+**Locked 2026-10-21.** Supersedes the fixed list of ten primitives in #15; the rest of #15 stands.
+
+#15 was right that primitives must exist before the first feature screen, and wrong to name the
+same ten for every project. A landing page has no `AppShell`, an admin tool needs a `Table` the
+list never mentioned, and a consumer app may never show a `StatusBadge`. A prescribed list gets
+built whole because it is prescribed — the "cost accepted" in #15 was paid in every project,
+including the ones where most of the kit went unused — and it says nothing about the primitives a
+project actually needs that are not on it.
+
+> The kit is the primitives the project's first screens share, decided by the agent from those
+> screens with the `plan-kit` playbook, and recorded in `shared/AGENTS.md` with what was left out
+> and why.
+
+What does not change: a primitive still lives in `shared/` from its first use, with its variants
+(`02 §6`), whether or not the kit named it. The kit decides what is built *ahead* of need, not what
+is allowed in `shared/`. Recording what was left out is the part that stops the next agent
+building it to "complete" the kit.
+
+The decision is made once, after phase 01 and before the first feature screen, as step 01.9, and
+re-made only when the product changes shape.
