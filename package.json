@@ -1,6 +1,6 @@
 {
   "name": "ai-development",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "private": true,
   "description": "A Next.js project template for coding agents: the conventions, the enforcement that makes them stick, and twelve repeatable playbooks.",
   "type": "module",

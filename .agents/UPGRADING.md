@@ -10,6 +10,17 @@ cannot see, a convention that changed meaning, a file your project must now writ
 
 Format: `## <version> — <date>`, then **Do:** lines, or "Nothing — `npm run verify` covers it."
 
+## 3.1.1 — 2026-10-21
+
+The kit's CI workflow used `actions/checkout@v4` and `actions/setup-node@v4`, which target Node 20.
+GitHub has deprecated Node 20 for actions and warns on every run. The kit now uses `@v7` of both.
+
+**Do:**
+
+- **`.github/workflows/verify.yml`: change `actions/checkout@v4` to `@v7`, and
+  `actions/setup-node@v4` to `@v7`.** `update` cannot reach `.github/`. Nothing else in the
+  file changes; `cache: npm` still works.
+
 ## 3.1.0 — 2026-10-21
 
 Nine playbooks read their arguments one place late in Claude Code, which counts `$N` from zero:
