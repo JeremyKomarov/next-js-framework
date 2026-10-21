@@ -7,12 +7,12 @@ of the lookup system (`00-INDEX.md`). Not to be confused with `.agents/docs/00-I
 between rulebook files, or `plan/00-INDEX.md`, which is the phase table of contents.
 
 **Playbook** — a repeatable procedure in `.agents/skills/<name>/SKILL.md`, invoked as
-`/<name>` by agents that support it and followed by hand otherwise.
+`/<name>` in Claude Code and `$<name>` in Codex.
 
 **Promotion** — moving something from a feature into `shared/` at the moment a second feature
 needs it. Never a copy. See `01-STRUCTURE.md` §4 and the `promote` playbook.
 
-**Shim** — a one-line file that points a specific agent at the canonical `AGENTS.md`. Contains no
+**Shim** — a one-line `CLAUDE.md` beside an `AGENTS.md` that points Claude Code at it. Contains no
 rules of its own, ever.
 
 **Silent success** — anything that reports success without doing the work: a stub handler

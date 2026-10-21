@@ -10,11 +10,11 @@ node bin/create.mjs my-app     # into a new directory
 node bin/create.mjs .          # in place, turning this clone into the project
 ```
 
-Three questions, then a repository where `npm run dev` and `npm run verify` both work, with every
-agent you named already wired to the same instructions. Nothing is published to npm and nothing is
+Three questions, then a repository where `npm run dev` and `npm run verify` both work, with Claude
+Code and Codex already wired to the same instructions. Nothing is published to npm and nothing is
 installed globally — it is one script you can read (`docs/DECISIONS.md` #21).
 
-Works from **Claude Code, Codex, Cursor, Gemini CLI and opencode** off one canonical set of files.
+Works from **Claude Code and Codex** off one canonical set of files.
 
 ## The idea
 
@@ -61,16 +61,17 @@ never create the folder. **No auth vendor is prescribed.** No Tailwind, no CSS-i
 
 ```
 .agents/           THE FRAMEWORK — all of it. You read it; you do not edit it.
-  docs/            the rulebook. Five files, 37 sections, fetched with `rule`.
-  skills/          the eleven playbooks. Read natively by Codex, Gemini CLI and opencode.
+  docs/            the rulebook. Five files, 38 sections, fetched with `rule`.
+  skills/          the eleven playbooks. Read natively by Codex, mirrored for Claude Code.
   templates/       the component kit, the API chain, the index shapes, the phase shape
   kit/             eslint config, tsconfig, vitest config, the registry test
   cli.mjs          the rule reader, the four checks, the skill sync, the framework updater
-  cli.test.mjs     the guard, guarded — 32 tests. Framework-only; never copied to a project.
+  cli.test.mjs     the guard, guarded — 37 tests. Framework-only; never copied to a project.
   version.json     which version this project is on
   UPGRADING.md     what each version asks of a project — newest first
 bin/create.mjs     the scaffolder. Deleted from a project once it has run.
-AGENTS.md          the root working guide — canonical, and what every agent reads
+AGENTS.md          the root working guide — canonical, read by Codex and (via CLAUDE.md) Claude Code
+.claude/           settings.json (the command allowlist) and the skills mirror
 docs/              YOURS — DECISIONS.md and GLOSSARY.md, seeded; your own docs beside them
 plan/              YOURS — the table of contents, NOW.md, one small file per phase
 .gitattributes     pins the working tree to LF. The checks compare files byte for byte; keep it.
@@ -99,33 +100,26 @@ comparison runs straight into; Linux is where all of that is invisible
 Deliberately *not* mechanized: naming, co-location, and "does `shared/` already have something
 that does this". Those need judgement, and a guard that is wrong often enough gets ignored.
 
-## Multi-agent
+## Two agents
 
 `AGENTS.md` is canonical, at the root and in every directory that owns things. Every
-agent-specific file is a **pointer containing no rules of its own** — six copies of a rulebook
+agent-specific file is a **pointer containing no rules of its own** — two copies of a rulebook
 diverge inside a month.
 
-| Agent | Reads `AGENTS.md` | Finds playbooks in | Needs wiring |
-|---|---|---|---|
-| **Codex** | natively, nested too | `.agents/skills/` | none |
-| **opencode** | natively | `.agents/skills/` | none |
-| **Gemini CLI** | via `GEMINI.md` | `.agents/skills/` | shim |
-| **Claude Code** | via a `CLAUDE.md` per directory | `.claude/skills/` | shims + mirror |
-| **Cursor** | root only | `.cursor/skills/` | rule + mirror |
+| Agent | Reads `AGENTS.md` | Finds playbooks in | Runs one as | Needs wiring |
+|---|---|---|---|---|
+| **Codex** | natively | `.agents/skills/` | `$name` | none |
+| **Claude Code** | via a `CLAUDE.md` per directory | `.claude/skills/` | `/name` | shims + mirror |
 
-Everything in the last column is written by `npm run sync:agents`. **Nobody writes a shim, and
-nobody runs `ln -s`** — which is what makes it work on Windows.
+The last column is written by `npm run sync:agents`. **Nobody writes a shim, and nobody runs
+`ln -s`** — which is what makes it work on Windows. The mirror is a symlink where the platform
+allows one, so an edit propagates with no action; where symlinks are refused it becomes a verified
+copy and `npm run guard` fails on a byte of drift.
 
-**Skills stay in lockstep.** `.agents/skills/` is canonical, and three of the five agents read it
-there natively. The two mirrors are symlinks where the platform allows one, so an edit propagates
-with no action; where symlinks are refused they become verified copies and `npm run guard` fails on
-a byte of drift.
-
-The guard also holds each `SKILL.md`'s frontmatter to keys every agent understands. A key borrowed
-from a *rules* file — `paths`, `globs` — is not ignored by the tools that do not know it: Claude
-Code drops the whole skill and says nothing, so a playbook goes missing from one agent with no
-error anywhere. Only `name` and `description` are honoured by all five, so **the instruction lives
-in the body of a `SKILL.md`, never in its frontmatter.**
+The guard holds each `SKILL.md`'s frontmatter to keys Claude Code accepts. A key borrowed from a
+*rules* file — `paths`, `globs` — is not ignored: Claude Code drops the whole skill and says
+nothing. Codex reads only `name` and `description`, so **the instruction lives in the body of a
+`SKILL.md`, never in its frontmatter.** Why only these two: `docs/DECISIONS.md` #26.
 
 ## Updating a project already using it
 
@@ -142,6 +136,6 @@ break your code by touching it — and commits nothing.
 ## Adapting it
 
 The opinions are written down with their reasons in [`docs/DECISIONS.md`](docs/DECISIONS.md) —
-twenty-two numbered entries, append-only. Disagreeing is fine; do it by adding the next entry,
+twenty-six numbered entries, append-only. Disagreeing is fine; do it by adding the next entry,
 superseding one, so the next person can see what changed and why. Editing the reasoning out is how
 a convention becomes a superstition.

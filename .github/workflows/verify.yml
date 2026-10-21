@@ -47,8 +47,7 @@ jobs:
         shell: bash
         run: |
           node bin/create.mjs "$RUNNER_TEMP/scaffolded" --yes \
-            --name="Scaffold Check" --description="Built by CI." \
-            --agents=claude,codex,cursor,gemini,opencode --skip-install
+            --name="Scaffold Check" --description="Built by CI." --skip-install
           cd "$RUNNER_TEMP/scaffolded"
           node .agents/cli.mjs check
           node .agents/cli.mjs rule 02 7

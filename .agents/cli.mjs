@@ -62,26 +62,25 @@ const files = (pattern) =>
 const RULEBOOK = ".agents/docs";
 const CANONICAL = ".agents/skills";
 const canonicalDir = join(ROOT, CANONICAL);
-// <marker directory> : <where that agent looks>. Codex, Gemini CLI and opencode read
-// .agents/skills/ natively and are deliberately absent — mirroring to them would list every
-// playbook twice. Only two agents still need a copy. 05-WORKFLOW.md §4.
-const MIRRORS = { ".claude": ".claude/skills", ".cursor": ".cursor/skills" };
-// Written by `sync` where the agent needs one, never by hand. A shim holds no rules of its own.
+// The two supported agents are Claude Code and Codex. Codex reads .agents/skills/ natively;
+// Claude Code reads only .claude/skills/, so that one path gets a mirror. 05-WORKFLOW.md §4.
+const MIRROR = ".claude/skills";
+// Written by `sync` beside every AGENTS.md, never by hand. A shim holds no rules of its own.
 const SHIM = `@AGENTS.md
 
 <!-- If the import above did not expand, read ./AGENTS.md in this directory now, and the
      AGENTS.md of any directory you are about to write in. This file holds no rules of its own. -->
 `;
-// 2.0 generated one .toml per skill for Gemini CLI. It now reads .agents/skills/ natively, so
-// those files are stale duplicates of playbooks it already has — pruned rather than left to rot.
-const LEGACY_GEMINI_DIR = ".gemini/commands";
-const TABLE = ["<!-- playbooks:start -->", "<!-- playbooks:end -->"];
-// Keys every agent understands. A key from a *rules* file (paths, globs, alwaysApply) is not
-// ignored by the rest — Claude Code drops the whole skill, silently. 05-WORKFLOW.md §4.
+// Skill keys. `name` and `description` are the two both agents read; the rest are Claude Code's
+// and Codex ignores them. A key from a *rules* file (paths, globs, alwaysApply) is not ignored —
+// Claude Code drops the whole skill, silently. 05-WORKFLOW.md §4.
 const FRONTMATTER_KEYS = new Set([
   "name", "description", "argument-hint", "allowed-tools", "model", "disable-model-invocation",
-  "license", "version",
 ]);
+// Codex stops reading project docs at project_doc_max_bytes — 32 KiB by default, counted across the
+// root AGENTS.md and every nested one on the path to where it was launched. The rest is cut off
+// with no error. This leaves a quarter of that for the nested ones.
+const ROOT_GUIDE_MAX_BYTES = 24 * 1024;
 
 function skills() {
   if (!existsSync(canonicalDir)) return [];
@@ -123,14 +122,6 @@ function rulebook() {
       return { num: file.slice(0, 2), file, path: `${RULEBOOK}/${file}`, sections };
     });
 }
-
-// Names, not descriptions. Every agent this framework supports discovers skills itself and loads
-// each one's `description:` at startup — so a table of those descriptions in AGENTS.md is a
-// second copy of something already in context, and AGENTS.md is the one file that loads on every
-// session of every agent. Ten names cost ~40 words; ten descriptions cost ~410. The names are the
-// affordance ("there is a playbook for this"); the description is one `rule`-sized lookup away.
-const playbookTable = (list) =>
-  `${TABLE[0]}\n\n` + list.map((s) => `\`${s.name}\``).join(" · ") + `\n\n`;
 
 // ================================================================ check: plan
 // The index row, the phase file's Status, the [~] marker and NOW.md must all agree — in both
@@ -255,7 +246,7 @@ function checkPlan(fail) {
 
 // ================================================================ check: docs
 // Every feature has its index, every §N citation resolves, every AGENTS.md has its CLAUDE.md
-// shim. None of these can check an index is still TRUE — that is the sync-index playbook's job.
+// shim, and the root guide fits in what Codex reads. None of these can check an index is still TRUE — that is the sync-index playbook's job.
 function checkDocs(fail) {
   if (!existsSync(join(ROOT, RULEBOOK))) return "no .agents/docs/ yet — nothing to check";
 
@@ -307,25 +298,28 @@ function checkDocs(fail) {
     });
   }
 
-  // Claude Code does not read AGENTS.md, so each one needs a shim beside it — but only where
-  // Claude Code is in use. An agent is "in use" if its marker directory exists (05-WORKFLOW.md
-  // §4); failing a project that has no .claude/ is a guard complaining about an agent nobody
-  // runs. `sync` writes the missing ones, so this only proves the ones present still resolve.
-  const claudeInUse = existsSync(join(ROOT, ".claude"));
+  // Claude Code does not read AGENTS.md, so each one needs a shim beside it. Codex reads
+  // AGENTS.md itself and needs nothing. `sync` writes the missing shims. 05-WORKFLOW.md §4.
   for (const file of files("**/AGENTS.md")) {
     const dir = dirname(file);
     const at = dir === "." ? "" : dir + "/";
     const shim = join(ROOT, dir, "CLAUDE.md");
     if (!existsSync(shim)) {
-      if (claudeInUse)
-        fail(`${at}CLAUDE.md  missing — Claude Code does not read AGENTS.md, so each one needs ` +
-             `its one-line shim (DECISIONS.md #14). Run: npm run sync:agents`);
+      fail(`${at}CLAUDE.md  missing — Claude Code does not read AGENTS.md, so each one needs ` +
+           `its one-line shim (DECISIONS.md #26). Run: npm run sync:agents`);
       continue;
     }
     const target = readFileSync(shim, "utf8").match(/@([\w./-]+\.md)/)?.[1];
     if (!target) fail(`${at}CLAUDE.md  has no @-import — a shim points at AGENTS.md and holds no rules of its own`);
     else if (!existsSync(join(ROOT, dir, target))) fail(`${at}CLAUDE.md  points at ${target}, which does not exist`);
   }
+
+  const guide = join(ROOT, "AGENTS.md");
+  const guideBytes = existsSync(guide) ? readFileSync(guide).length : 0;
+  if (guideBytes > ROOT_GUIDE_MAX_BYTES)
+    fail(`AGENTS.md  is ${Math.round(guideBytes / 1024)} KiB — over ${ROOT_GUIDE_MAX_BYTES / 1024} KiB, ` +
+         `Codex starts cutting project docs off with no error. Move detail into the rulebook or a ` +
+         `directory's own AGENTS.md (05-WORKFLOW.md §4)`);
 
   return `${docs.length} rulebook file(s), ${docs.reduce((n, d) => n + d.sections.length, 0)} sections, ` +
          `${featureDirs.length} feature(s)`;
@@ -392,14 +386,14 @@ function checkStyles(fail) {
 }
 
 // =============================================================== check: agents
-// Every agent sees the same playbooks, or the ones that differ are followed confidently and
-// silently. 05-WORKFLOW.md §4. `fix` repairs what it can; frontmatter it cannot.
+// Claude Code and Codex see the same playbooks, or the one that differs is followed confidently
+// and silently. 05-WORKFLOW.md §4. `fix` repairs what it can; frontmatter it cannot.
 function checkAgents(fail, fix) {
-  if (!existsSync(canonicalDir)) return `no ${CANONICAL}/ yet — nothing to check`;
+  const hasSkills = existsSync(canonicalDir);
   const list = skills();
   const done = [];
 
-  const canonicalFiles = globSync("**/*", { cwd: canonicalDir, withFileTypes: true })
+  const canonicalFiles = !hasSkills ? [] : globSync("**/*", { cwd: canonicalDir, withFileTypes: true })
     .filter((e) => e.isFile()).map((e) => under(canonicalDir, join(e.parentPath ?? e.path, e.name))).sort();
 
   // -- frontmatter: the one thing a sync cannot write for you
@@ -408,16 +402,16 @@ function checkAgents(fail, fix) {
     if (!s.frontmatter) { fail(`${where}  has no --- frontmatter block — no agent will list it`, true); continue; }
     if (!s.description)
       fail(`${where}  has no description: — it is all an agent sees before deciding whether to ` +
-           `open the playbook, and the generated table is built from it`, true);
+           `open the playbook`, true);
     for (const key of s.keys) {
       if (FRONTMATTER_KEYS.has(key)) continue;
-      fail(`${where}  frontmatter key "${key}" is not understood by every agent — Claude Code ` +
-           `drops the whole skill rather than ignoring the key, so the playbook disappears with ` +
-           `no error. Allowed: ${[...FRONTMATTER_KEYS].join(", ")}`, true);
+      fail(`${where}  frontmatter key "${key}" is not a skill key — Claude Code drops the whole ` +
+           `skill rather than ignoring the key, so the playbook disappears with no error. ` +
+           `Allowed: ${[...FRONTMATTER_KEYS].join(", ")}`, true);
     }
   }
 
-  // -- mirrors
+  // -- the mirror. Codex reads .agents/skills/ itself; Claude Code reads only .claude/skills/.
   const link = (path) => {
     try {
       mkdirSync(dirname(path), { recursive: true });
@@ -426,26 +420,25 @@ function checkAgents(fail, fix) {
     } catch { return false; }                       // Windows without developer mode, and most CI
   };
 
-  for (const [marker, mirror] of Object.entries(MIRRORS)) {
-    if (!existsSync(join(ROOT, marker))) continue;        // that agent is not in use here
-    const path = join(ROOT, mirror);
+  const checkMirror = () => {
+    const path = join(ROOT, MIRROR);
     const stat = existsSync(path) ? lstatSync(path) : null;
 
     if (stat?.isSymbolicLink()) {
       const target = resolve(dirname(path), readlinkSync(path));
-      if (target !== canonicalDir) fail(`${mirror}  is a symlink to ${target}, not to ${CANONICAL}`);
-      continue;                                           // a correct symlink cannot drift
+      if (target !== canonicalDir) fail(`${MIRROR}  is a symlink to ${target}, not to ${CANONICAL}`);
+      return;                                             // a correct symlink cannot drift
     }
 
     // A committed symlink cloned where symlinks are unavailable arrives as a one-line text file
     // holding its own target. It looks present and contains no skills at all.
     if (stat?.isFile()) {
       if (!fix) {
-        fail(`${mirror}  is a file, not a directory — a committed symlink checked out on a ` +
-             `platform without symlink support, so that agent sees no playbooks`);
-        continue;
+        fail(`${MIRROR}  is a file, not a directory — a committed symlink checked out on a ` +
+             `platform without symlink support, so Claude Code sees no playbooks`);
+        return;
       }
-      rmSync(path); done.push(`removed ${mirror}, a symlink checked out as a plain file`);
+      rmSync(path); done.push(`removed ${MIRROR}, a symlink checked out as a plain file`);
     }
 
     const present = existsSync(path) && lstatSync(path).isDirectory();
@@ -463,143 +456,52 @@ function checkAgents(fail, fix) {
     }
 
     if (fix) {
-      if (!present && link(path)) { done.push(`symlinked ${mirror} -> ${CANONICAL}`); continue; }
+      if (!present && link(path)) { done.push(`symlinked ${MIRROR} -> ${CANONICAL}`); return; }
       for (const rel of [...missing, ...differs]) {
         mkdirSync(dirname(join(path, rel)), { recursive: true });
         copyFileSync(join(canonicalDir, rel), join(path, rel));
-        done.push(`copied ${mirror}/${rel}`);
+        done.push(`copied ${MIRROR}/${rel}`);
       }
-      for (const rel of extra) { rmSync(join(path, rel)); done.push(`removed orphan ${mirror}/${rel}`); }
+      for (const rel of extra) { rmSync(join(path, rel)); done.push(`removed orphan ${MIRROR}/${rel}`); }
       // Removing a deleted skill's only file leaves its directory behind, and an empty skill
       // folder still enumerates as a skill.
       for (const e of readdirSync(path, { withFileTypes: true }).filter((x) => x.isDirectory())) {
         if (!readdirSync(join(path, e.name)).length) {
           rmSync(join(path, e.name), { recursive: true });
-          done.push(`removed empty ${mirror}/${e.name}/`);
+          done.push(`removed empty ${MIRROR}/${e.name}/`);
         }
       }
     } else if (!present) {
-      fail(`${mirror}  missing entirely — ${marker}/ exists, so that agent is in use and can see ` +
-           `none of the ${list.length} playbooks`);
+      fail(`${MIRROR}  missing — Claude Code reads skills from there and can see none of the ` +
+           `${list.length} playbooks. Run: npm run sync:agents`);
     } else {
-      for (const rel of missing) fail(`${mirror}/${rel}  missing — a skill this agent cannot see`);
+      for (const rel of missing) fail(`${MIRROR}/${rel}  missing — a skill Claude Code cannot see`);
       for (const rel of differs)
-        fail(`${mirror}/${rel}  differs from ${CANONICAL}/${rel} — a stale copy is worse than no ` +
+        fail(`${MIRROR}/${rel}  differs from ${CANONICAL}/${rel} — a stale copy is worse than no ` +
              `copy. Edit the canonical file, then run: npm run sync:agents`);
-      for (const rel of extra) fail(`${mirror}/${rel}  orphan — its skill was deleted`);
+      for (const rel of extra) fail(`${MIRROR}/${rel}  orphan — its skill was deleted`);
       for (const e of readdirSync(path, { withFileTypes: true }).filter((x) => x.isDirectory())) {
         if (!readdirSync(join(path, e.name)).length)
-          fail(`${mirror}/${e.name}/  empty directory — still enumerates as a skill`);
+          fail(`${MIRROR}/${e.name}/  empty directory — still enumerates as a skill`);
       }
     }
-  }
+  };
+  if (hasSkills) checkMirror();
 
-  // -- legacy gemini adapters
-  // 2.0 generated one .toml per skill because Gemini CLI had no skill support. It now reads
-  // .agents/skills/ natively, so each .toml is a second, staler description of a playbook Gemini
-  // already has — the exact drift the sync exists to prevent, pointed at itself.
-  {
-    const dir = join(ROOT, LEGACY_GEMINI_DIR);
-    const stale = existsSync(dir)
-      ? readdirSync(dir).filter((f) => f.endsWith(".toml") && list.some((s) => `${s.name}.toml` === f))
-      : [];
-    for (const file of stale) {
-      if (fix) { rmSync(join(dir, file)); done.push(`removed ${LEGACY_GEMINI_DIR}/${file}, superseded by native skill support`); }
-      else fail(`${LEGACY_GEMINI_DIR}/${file}  superseded — Gemini CLI reads ${CANONICAL}/ ` +
-                `natively, so this is a stale second copy of that playbook's description. ` +
-                `Run: npm run sync:agents`);
-    }
-    if (fix && stale.length && existsSync(dir) && !readdirSync(dir).length) {
-      rmSync(dir, { recursive: true });
-      done.push(`removed empty ${LEGACY_GEMINI_DIR}/`);
-    }
-  }
-
-  // -- shims: the one-line pointers for the agents that do not read AGENTS.md themselves
+  // -- shims: the one-line CLAUDE.md beside every AGENTS.md, for the agent that reads only CLAUDE.md
   // Written here, never by hand. An existing shim is never overwritten — a project may have
   // added imports of its own to it, and this file's whole job is not to be a second rulebook.
-  if (existsSync(join(ROOT, ".claude"))) {
-    for (const file of files("**/AGENTS.md")) {
-      const dir = dirname(file);
-      const shim = join(ROOT, dir, "CLAUDE.md");
-      if (existsSync(shim)) continue;
-      const at = dir === "." ? "" : dir + "/";
-      if (fix) { writeFileSync(shim, SHIM); done.push(`wrote ${at}CLAUDE.md`); }
-      // not reported here — checkDocs owns the message, so it is not printed twice
-    }
-  }
-  // Cursor reads the root AGENTS.md and stops there — it does not pick up a directory's own
-  // AGENTS.md the way Codex and Claude Code do. Tier 2 is the whole lookup system, so without
-  // this Cursor is the one agent that answers "does something here already do this?" by globbing.
-  // An always-applied rule is the only hook Cursor offers for it, and it holds no rule of its
-  // own — it is a pointer, like every other agent-specific file (DECISIONS.md #14).
-  if (existsSync(join(ROOT, ".cursor"))) {
-    const rule = join(ROOT, ".cursor/rules/agents-md.mdc");
-    const want = `---
-description: Always read the AGENTS.md of the directory you are about to write in.
-alwaysApply: true
----
-
-Before creating any component, hook, util, type or API call, read the \`AGENTS.md\` of the
-directory you are about to write in, then \`src/shared/AGENTS.md\`. They inventory what already
-exists; something that does 80% of it is a thing to extend, not to build beside.
-
-After creating one, update that same \`AGENTS.md\` in the same change.
-
-The rules themselves are addressed as \`<NN> §N\`. Read one section, not a whole file:
-\`node .agents/cli.mjs rule 02 7\`. \`node .agents/cli.mjs rule\` lists every section.
-
-This file holds no rules of its own. \`AGENTS.md\` is canonical.
-`;
-    if (!existsSync(rule) || read(rule) !== lf(want)) {
-      if (fix) {
-        mkdirSync(dirname(rule), { recursive: true });
-        writeFileSync(rule, want);
-        done.push(`wrote .cursor/rules/agents-md.mdc`);
-      } else fail(`.cursor/rules/agents-md.mdc  ${existsSync(rule) ? "is out of date" : "missing"} — ` +
-                  `without it Cursor never reads a directory's own AGENTS.md. Run: npm run sync:agents`);
-    }
+  for (const file of files("**/AGENTS.md")) {
+    const dir = dirname(file);
+    const shim = join(ROOT, dir, "CLAUDE.md");
+    if (existsSync(shim)) continue;
+    const at = dir === "." ? "" : dir + "/";
+    if (fix) { writeFileSync(shim, SHIM); done.push(`wrote ${at}CLAUDE.md`); }
+    // not reported here — checkDocs owns the message, so it is not printed twice
   }
 
-  if (existsSync(join(ROOT, ".gemini"))) {
-    // Gemini CLI reads GEMINI.md; settings.json is what puts AGENTS.md beside it. Both are
-    // created when absent and never rewritten — settings.json is a project's own config file with
-    // room for keys that are none of the framework's business, and clobbering it on every sync
-    // would make it the one generated file that eats your edits without saying so.
-    const settings = join(ROOT, ".gemini/settings.json");
-    const want = JSON.stringify({ context: { fileName: ["AGENTS.md", "GEMINI.md"] } }, null, 2) + "\n";
-    for (const [path, body, why] of [
-      [join(ROOT, "GEMINI.md"), SHIM, "Gemini CLI reads it and finds no AGENTS.md without it"],
-      [settings, want, "without it Gemini CLI reads GEMINI.md and not AGENTS.md"],
-    ]) {
-      if (existsSync(path)) continue;
-      const at = under(ROOT, path);
-      if (fix) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, body); done.push(`wrote ${at}`); }
-      else fail(`${at}  missing — .gemini/ exists, so Gemini CLI is in use and ${why}. Run: npm run sync:agents`);
-    }
-  }
-
-  // -- the playbook table in AGENTS.md, for agents with no command system
-  const agentsMd = join(ROOT, "AGENTS.md");
-  if (existsSync(agentsMd)) {
-    const raw = readFileSync(agentsMd, "utf8");
-    const body = lf(raw);
-    const start = body.indexOf(TABLE[0]), end = body.indexOf(TABLE[1]);
-
-    if (start === -1 || end === -1) {
-      fail(`AGENTS.md  has no ${TABLE[0]} / ${TABLE[1]} markers around the playbook table — an ` +
-           `agent with no command system finds skills through that table`);
-    } else if (body.slice(start, end) !== playbookTable(list)) {
-      if (fix) {
-        const next = body.slice(0, start) + playbookTable(list) + body.slice(end);
-        const eol = eolOf(raw);
-        writeFileSync(agentsMd, eol === "\n" ? next : next.split("\n").join(eol));
-        done.push("regenerated the playbook table in AGENTS.md");
-      } else fail(`AGENTS.md  playbook table is out of date`);
-    }
-  }
-
-  return fix ? done : `${list.length} skill(s) in sync`;
+  if (fix) return done;
+  return hasSkills ? `${list.length} skill(s) in sync` : `no ${CANONICAL}/ yet — nothing to check`;
 }
 
 // ================================================================== command: check
@@ -832,7 +734,7 @@ switch (cmd) {
 
   rule [NN] [N] [-q term]                 npm run rule       — read one section, not a file
   check [--only=plan,docs,styles,agents]  npm run guard
-  sync                                    npm run sync:agents
+  sync                                    npm run sync:agents — the Claude Code mirror and shims
   update [path-or-url] [--no-branch]      npm run update:framework
   hooks                                   npm run hooks       — wires the pre-commit plan check`);
     process.exit(cmd ? 2 : 0);

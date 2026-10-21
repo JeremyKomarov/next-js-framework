@@ -19,10 +19,6 @@ next-env.d.ts
 coverage/
 *.tsbuildinfo
 
-# Agent skill mirrors (.claude/skills, .cursor/skills, .grok/skills, .windsurf/skills and
-# .gemini/commands) are NOT ignored. A symlinked mirror is 17 bytes and makes a fresh clone work
-# immediately; a copy-fallback mirror is caught by `npm run guard:agents` if it ever diverges. That
-# guard is the reason committing them is safe.
-#
-# The marker directory is what says an agent is in use. To stop supporting one, delete its whole
-# directory — the guard stops looking for it, with no list to edit anywhere.
+# The Claude Code skill mirror (.claude/skills) is NOT ignored. A symlinked mirror is 17 bytes and
+# makes a fresh clone work immediately; a copy-fallback mirror is caught by
+# `npm run guard -- --only=agents` if it ever diverges. That guard is the reason committing it is safe.

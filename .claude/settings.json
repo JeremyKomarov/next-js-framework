@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node .agents/cli.mjs rule:*)",
+      "Bash(node .agents/cli.mjs check:*)",
+      "Bash(npm run rule:*)",
+      "Bash(npm run guard:*)",
+      "Bash(npm run sync:agents)",
+      "Bash(npm run verify)",
+      "Bash(npm run typecheck)",
+      "Bash(npm run lint)",
+      "Bash(npm run test)",
+      "Bash(npm test)"
+    ]
+  }
+}

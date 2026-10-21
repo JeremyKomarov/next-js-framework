@@ -27,7 +27,7 @@ The map is generated from the files, so it cannot go stale — and it is cheaper
 | How do I add a screen? How do feature flags work? | `rule 04 1`, `rule 04 2` |
 | How do I break work into phases? Where is the work right now? | `rule 05 1`, `rule 05 2` |
 | What is actually checked, and by what? | `rule 05 3` |
-| How do I wire a new agent? Why is my skill invisible? | `rule 05 4` |
+| How are Claude Code and Codex wired? Why is my skill invisible? | `rule 05 4` |
 | How do I branch, commit, update the framework? | `rule 05 5`, `rule 05 6` |
 | Why is it done this way and not the obvious way? | [`docs/DECISIONS.md`](../../docs/DECISIONS.md) |
 | What does this word mean here? | [`docs/GLOSSARY.md`](../../docs/GLOSSARY.md) |
@@ -84,7 +84,8 @@ judgement.
 | `docs/` | yours — `DECISIONS.md` and `GLOSSARY.md` arrive seeded; append. |
 | `plan/` | yours — your phases. The shape is prescribed, the content never is. |
 | root configs, `AGENTS.md`, `CLAUDE.md`, `.gitattributes` | shared — pinned to the root by tool convention. |
-| `.claude/`, `.cursor/`, `.gemini/` | generated — every file in them is written by `sync:agents` and holds no rule of its own. |
+| `.claude/skills`, every `CLAUDE.md` | generated — written by `sync:agents`, holding no rule of their own. |
+| `.claude/settings.json` | shared — seeded with the framework's command allowlist; add your own. |
 
 Nothing you write goes inside `.agents/` except a new playbook. Nothing the framework owns lives
 outside it except the root files that are not allowed to move, and the generated agent wiring.

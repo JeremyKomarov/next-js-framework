@@ -4,7 +4,7 @@ Numbered and append-only. Once a decision is locked here, do not re-open it with
 reason — **add a new numbered entry that supersedes the old one instead of editing history.** A
 superseded entry stays in place, marked, so the reasoning that produced it is still readable.
 
-Entries 1–22 are the framework's own, and arrive with every new project. Number 23 onwards are
+Entries 1–26 are the framework's own, and arrive with every new project. Number 27 onwards are
 yours.
 
 Format: `## N. <the decision, stated as a claim>` · `**Locked YYYY-MM-DD.**` · the reasoning,
@@ -153,7 +153,7 @@ interception in tests is genuinely needed.
 
 ## 14. `AGENTS.md` is canonical; every other agent file is a pointer
 
-**Locked 2026-09-05.**
+**Locked 2026-09-05.** *The roster of five agents is superseded by #26; the rest stands.*
 
 The rulebook must work from **Claude Code, Codex, Cursor, Gemini CLI and opencode**, and from
 whatever is next. Each one gets a file containing a pointer and no rules of its own.
@@ -557,3 +557,34 @@ second is a guess never checked at 360px, 768px or 1280px (`02 §8`).
 
 This supersedes the "the values are yours" sentence in `02-COMPONENTS.md §7` as it read before
 this entry.
+
+## 26. Two agents are supported: Claude Code and Codex
+
+**Locked 2026-10-21.** Supersedes the five-agent roster in #14; everything else in #14 stands.
+
+#14 called the roster a maintenance promise: every name on it is a set of paths to re-verify each
+time that tool ships. Cursor, Gemini CLI and opencode were on it and in use by nobody here, so they
+were exactly the claim nobody checks. Each cost real code — a generated Cursor rule, a Gemini shim
+and settings file, a legacy `.toml` pruner, a marker directory per agent to say whether it was in
+use — and every one of those was a place for a silent failure in an agent nobody would notice was
+broken.
+
+> The framework supports Claude Code and Codex, and both are always wired. There is no per-agent
+> switch.
+
+**Codex** reads `AGENTS.md` and `.agents/skills/` where they are; it needs no file of its own.
+**Claude Code** reads neither, so `sync` writes a `CLAUDE.md` shim beside every `AGENTS.md` and
+symlinks `.claude/skills` to the canonical skills. Both are required by the guard unconditionally —
+the "is `.claude/` present?" test is gone, because an agent that is always supported is never
+absent.
+
+**The generated playbook table in `AGENTS.md` is gone too.** It existed for agents with no skill
+system. Both remaining agents list skills natively and load each `description:` at startup, so the
+table was a second copy of something already in context, in the one file loaded every session.
+
+**What the two do not share is still the reason the instruction lives in a skill's body.** Only
+`name` and `description` are read by both; `disable-model-invocation`, `argument-hint` and
+`allowed-tools` are Claude Code's. Codex invokes a skill as `$name`, Claude Code as `/name`.
+
+Adding a third agent means adding an entry that supersedes this one, and signing up to verify its
+paths on every release.

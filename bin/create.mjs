@@ -8,10 +8,10 @@
 //
 // Run it from the template, not from npm — it is deliberately not published (DECISIONS.md #21).
 //
-// Flags: --yes  --name=<n>  --description=<d>  --db  --agents=claude,codex  --skip-install
+// Flags: --yes  --name=<n>  --description=<d>  --db  --skip-install
 //
 // The framework itself is .agents/ and nothing else, so scaffolding is: run create-next-app,
-// copy .agents/ and the root governance files in, merge one scripts block, wire the agents.
+// copy .agents/ and the root governance files in, merge one scripts block, wire Claude Code.
 // This file is deleted from a scaffolded project — it belongs to the template, not to you.
 import {
   readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, cpSync, renameSync,
@@ -34,7 +34,7 @@ const step = (s) => say(`  ${c.green}✓${c.off} ${s}`);
 const die = (s) => { console.error(`\n  ${c.red}✗${c.off} ${s}\n`); process.exit(1); };
 
 // Everything the framework owns, plus the root files tool conventions pin in place.
-const TEMPLATE_FILES = [".agents", "AGENTS.md", "CLAUDE.md", "docs", "plan", ".gitattributes"];
+const TEMPLATE_FILES = [".agents", "AGENTS.md", "CLAUDE.md", ".claude/settings.json", "docs", "plan", ".gitattributes"];
 
 const SCRIPTS = {
   dev: "next dev",
@@ -66,22 +66,6 @@ const DEV_DEPS = {
   eslint: "^9.39.5", "eslint-config-next": "^16.3.4", typescript: "^6.0.3", vitest: "^5.0.0",
 };
 
-// name : the marker directory that tells `sync` this agent is in use. Codex and opencode read
-// AGENTS.md and .agents/skills/ natively, so they need no marker and no files at all — listing
-// them is how a person confirms they are covered, not a thing to configure.
-//
-// Everything each marker implies — the mirror, the shims, the Cursor rule, Gemini's settings — is
-// written by `.agents/cli.mjs sync`, which runs at the end of this script. This map is a roster,
-// not a second copy of the wiring rules (.agents/docs/05-WORKFLOW.md §4).
-const AGENTS = {
-  claude:   { marker: ".claude" },
-  codex:    {},
-  cursor:   { marker: ".cursor" },
-  gemini:   { marker: ".gemini" },
-  opencode: {},
-};
-const DEFAULT_AGENTS = Object.keys(AGENTS).join(",");
-
 // ------------------------------------------------------------------------ ask
 async function ask(target) {
   const interactive = stdin.isTTY && !has("yes");
@@ -89,7 +73,6 @@ async function ask(target) {
     name: opt("name") ?? basename(resolve(target)),
     description: opt("description") ?? "",
     db: has("db"),
-    agents: opt("agents") ?? DEFAULT_AGENTS,
   };
   if (!interactive) return fallback;
 
@@ -102,9 +85,8 @@ async function ask(target) {
   const name = await q("Project name", fallback.name);
   const description = await q("One sentence on what it is", fallback.description || "TODO — one sentence.");
   const db = (await q("Does it have a database? y/N", fallback.db ? "y" : "n")).toLowerCase().startsWith("y");
-  const agents = await q(`Agents ${c.dim}[${Object.keys(AGENTS).join(" ")}]${c.off}`, fallback.agents);
   rl.close();
-  return { name, description, db, agents };
+  return { name, description, db };
 }
 
 // -------------------------------------------------------------------- helpers
@@ -175,21 +157,21 @@ const inPlace = root === TEMPLATE;
 say(`\n  ${c.bold}create${c.off} ${c.dim}${readJson(join(TEMPLATE, ".agents/version.json")).version}${c.off}`);
 
 if (!inPlace) {
-  if (existsSync(root) && readdirSync(root).some((f) => !["\.git", ".git", ".gitignore", "README.md", "LICENSE"].includes(f)))
+  if (existsSync(root) && readdirSync(root).some((f) => ![".git", ".gitignore", "README.md", "LICENSE"].includes(f)))
     die(`${root} is not empty. Pick an empty directory, or cd into it and run with \`.\``);
   mkdirSync(root, { recursive: true });
 }
 
 const answers = await ask(root);
-const wanted = answers.agents.split(/[,\s]+/).map((a) => a.trim().toLowerCase()).filter(Boolean);
-for (const a of wanted) if (!AGENTS[a]) die(`unknown agent "${a}". Known: ${Object.keys(AGENTS).join(", ")}`);
 
 say();
 
 // 1. the framework's files
 if (!inPlace) {
   for (const f of TEMPLATE_FILES) {
-    if (existsSync(join(TEMPLATE, f))) cpSync(join(TEMPLATE, f), join(root, f), { recursive: true });
+    if (!existsSync(join(TEMPLATE, f))) continue;
+    mkdirSync(dirname(join(root, f)), { recursive: true });
+    cpSync(join(TEMPLATE, f), join(root, f), { recursive: true });
   }
   if (existsSync(join(TEMPLATE, ".gitignore")) && !existsSync(join(root, ".gitignore")))
     cpSync(join(TEMPLATE, ".gitignore"), join(root, ".gitignore"));
@@ -376,18 +358,12 @@ step("AGENTS.md filled in");
 
 // 7. the agents
 //
-// This creates marker directories and nothing else. `sync` reads those markers and writes every
-// file each agent actually needs — the skill mirrors, the CLAUDE.md shims beside every AGENTS.md,
-// the Cursor rule, GEMINI.md and .gemini/settings.json. Two agents need no marker: Codex and
-// opencode read AGENTS.md and .agents/skills/ where they already are.
-//
-// Doing it this way rather than writing the files here is the point: `sync` runs again on every
-// change, so the wiring has exactly one implementation and a scaffolded project cannot start out
-// differently from a synced one.
-for (const a of wanted) if (AGENTS[a].marker) mkdirSync(join(root, AGENTS[a].marker), { recursive: true });
-
+// Codex reads AGENTS.md and .agents/skills/ where they already are. Claude Code needs the
+// .claude/skills mirror and a CLAUDE.md shim beside every AGENTS.md, and `sync` writes both —
+// it runs again on every change, so the wiring has exactly one implementation and a scaffolded
+// project cannot start out differently from a synced one.
 run(process.execPath, [join(root, ".agents/cli.mjs"), "sync"], root);
-step(`${wanted.length} agent(s) wired: ${wanted.join(", ")}`);
+step("Claude Code and Codex wired");
 
 // 8. the project's own README replaces the framework's
 writeFileSync(join(root, "README.md"), `# ${answers.name}

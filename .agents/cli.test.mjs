@@ -12,7 +12,7 @@
 // within a week, so the empty project and the false-positive regressions are tested too.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync, readFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -51,7 +51,8 @@ function project(files = {}) {
   write(root, "plan/00-INDEX.md", PLAN_INDEX());
   write(root, "plan/01-foundation.md", PHASE());
   write(root, "plan/NOW.md", NOW());
-  write(root, "AGENTS.md", "# fixture\n\n<!-- playbooks:start -->\n\n<!-- playbooks:end -->\n");
+  write(root, "AGENTS.md", "# fixture\n");
+  write(root, "CLAUDE.md", "@AGENTS.md\n");
 
   for (const [path, body] of Object.entries(files)) {
     if (body === null) rmSync(join(root, path), { recursive: true, force: true });
@@ -194,23 +195,21 @@ test("docs: a valid citation in any file type passes", () => {
   }), "--only=docs");
 });
 
-// An agent is "in use" if its marker directory exists (05-WORKFLOW.md §4). Demanding a CLAUDE.md
-// from a project with no .claude/ is the guard failing over an agent nobody runs.
-test("docs: a missing CLAUDE.md is only a failure when .claude/ exists", () => {
-  passes(fixture({ "src/shared/AGENTS.md": "# shared\n" }), "--only=docs");
-
-  const withClaude = fixture({
-    "src/shared/AGENTS.md": "# shared\n",
-    ".claude/settings.json": "{}\n",
-  });
-  fails(withClaude, "CLAUDE.md  missing", "--only=docs");
+// Claude Code reads CLAUDE.md, not AGENTS.md — a nested index with no shim is invisible to it.
+test("docs: an AGENTS.md with no CLAUDE.md beside it fails, and sync writes it", () => {
+  const root = fixture({ "src/shared/AGENTS.md": "# shared\n" });
+  fails(root, "src/shared/CLAUDE.md  missing", "--only=docs");
+  assert.equal(cli(root, "sync").code, 0);
+  passes(root, "--only=docs");
 });
 
 test("docs: a CLAUDE.md pointing at a file that is not there fails", () => {
-  fails(fixture({
-    ".claude/settings.json": "{}\n",
-    "CLAUDE.md": "@NOPE.md\n",
-  }), "which does not exist", "--only=docs");
+  fails(fixture({ "CLAUDE.md": "@NOPE.md\n" }), "which does not exist", "--only=docs");
+});
+
+// Codex cuts project docs off at 32 KiB with no error, so the root guide is held well under it.
+test("docs: a root AGENTS.md too large for Codex to read whole fails", () => {
+  fails(fixture({ "AGENTS.md": "# fixture\n\n" + "word ".repeat(6000) }), "Codex starts cutting", "--only=docs");
 });
 
 // =================================================================== check: styles
@@ -256,7 +255,7 @@ test("styles: a class map matching its stylesheet, including BEM parts, passes",
 // =================================================================== check: agents
 test("agents: a frontmatter key some agent silently drops the skill over fails", () => {
   const root = fixture({ ".agents/skills/thing/SKILL.md": SKILL("thing", "globs: '**/*.ts'\n") });
-  fails(root, "is not understood by every agent", "--only=agents");
+  fails(root, "is not a skill key", "--only=agents");
 });
 
 test("agents: a skill with no description fails", () => {
@@ -264,17 +263,24 @@ test("agents: a skill with no description fails", () => {
   fails(root, "has no description", "--only=agents");
 });
 
-test("agents: a mirror missing a skill fails, and sync repairs it", () => {
-  const root = fixture({
-    ".agents/skills/thing/SKILL.md": SKILL("thing"),
-    ".claude/settings.json": "{}\n",
-  });
-  fails(root, "playbooks", "--only=agents");
+test("agents: a missing Claude Code mirror fails, and sync repairs it idempotently", () => {
+  const root = fixture({ ".agents/skills/thing/SKILL.md": SKILL("thing") });
+  fails(root, ".claude/skills  missing", "--only=agents");
 
   assert.equal(cli(root, "sync").code, 0);
   passes(root, "--only=agents");
-  assert.ok(readFileSync(join(root, "AGENTS.md"), "utf8").includes("`thing`"),
-    "sync must write the playbook name into AGENTS.md");
+  assert.ok(existsSync(join(root, ".claude/skills/thing/SKILL.md")), "Claude Code must see the skill");
+
+  const second = cli(root, "sync");
+  assert.match(second.out, /already in sync/, `sync must be idempotent, second run said:\n${second.out}`);
+});
+
+test("agents: a copied mirror that drifts from the canonical skill fails", () => {
+  const root = fixture({
+    ".agents/skills/thing/SKILL.md": SKILL("thing"),
+    ".claude/skills/thing/SKILL.md": SKILL("thing") + "\nstale line\n",
+  });
+  fails(root, "differs from", "--only=agents");
 });
 
 // A committed symlink checked out where symlinks are unavailable arrives as a one-line text file
@@ -285,32 +291,6 @@ test("agents: a mirror checked out as a plain file fails, and sync repairs it", 
     ".claude/skills": "../.agents/skills",
   });
   fails(root, "is a file, not a directory", "--only=agents");
-  assert.equal(cli(root, "sync").code, 0);
-  passes(root, "--only=agents");
-});
-
-test("agents: sync writes the Cursor rule and the Gemini shim, and is idempotent", () => {
-  const root = fixture({
-    ".agents/skills/thing/SKILL.md": SKILL("thing"),
-    ".cursor/rules/.keep": "",
-    ".gemini/.keep": "",
-  });
-  assert.equal(cli(root, "sync").code, 0);
-  passes(root, "--only=agents");
-  assert.ok(readFileSync(join(root, ".cursor/rules/agents-md.mdc"), "utf8").includes("alwaysApply: true"));
-  assert.ok(readFileSync(join(root, "GEMINI.md"), "utf8").includes("@AGENTS.md"));
-
-  const second = cli(root, "sync");
-  assert.match(second.out, /already in sync/, `sync must be idempotent, second run said:\n${second.out}`);
-});
-
-// 2.0 generated one .toml per skill for Gemini CLI, which now reads .agents/skills/ natively.
-test("agents: a leftover Gemini .toml adapter is reported and pruned", () => {
-  const root = fixture({
-    ".agents/skills/thing/SKILL.md": SKILL("thing"),
-    ".gemini/commands/thing.toml": `description = "old"\nprompt = "old"\n`,
-  });
-  fails(root, "superseded", "--only=agents");
   assert.equal(cli(root, "sync").code, 0);
   passes(root, "--only=agents");
 });

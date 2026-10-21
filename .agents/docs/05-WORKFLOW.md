@@ -172,50 +172,53 @@ which section you want.
 
 ## 4. Skills stay identical everywhere
 
-**Change, add or delete a skill and every agent must see it in the same commit.** A stale copy is
+**Change, add or delete a skill and both agents must see it in the same commit.** A stale copy is
 worse than a missing one: an agent follows it confidently and does the superseded thing.
 
-`.agents/skills/` is canonical. **Codex, Gemini CLI and opencode read it there natively** — no
-mirror, no adapter, nothing to drift. Two agents still look elsewhere, and get a mirror:
+Two agents are supported — Claude Code and Codex (`docs/DECISIONS.md #26`). `.agents/skills/` is
+canonical, and `AGENTS.md` is canonical.
 
-| Agent | Reads `AGENTS.md` | Finds playbooks in | Needs wiring |
-|---|---|---|---|
-| **Codex** | natively, nested too | `.agents/skills/` | none |
-| **opencode** | natively | `.agents/skills/` | none |
-| **Gemini CLI** | via `GEMINI.md` + `.gemini/settings.json` | `.agents/skills/` | shim, written by `sync` |
-| **Claude Code** | via a `CLAUDE.md` shim per directory | `.claude/skills/` | shims + mirror, both written by `sync` |
-| **Cursor** | root only — nested indexes need `.cursor/rules/` | `.cursor/skills/` | rule + mirror, both written by `sync` |
+| Agent | Reads `AGENTS.md` | Finds playbooks in | Runs one as | Needs wiring |
+|---|---|---|---|---|
+| **Codex** | natively — root down to the launch directory, once, at startup | `.agents/skills/` | `$name` | none |
+| **Claude Code** | via a `CLAUDE.md` shim beside each one; nested ones load when it works there | `.claude/skills/` | `/name` | shims + mirror, written by `sync` |
 
-A mirror is a symlink where the platform allows one, so an edit propagates with no action at all
+**Neither agent reliably loads a directory's `AGENTS.md` at the moment it starts writing there.**
+Codex reads only the ones on the path to where it was launched; Claude Code loads a nested one
+lazily. That is why the lookup protocol in the root guide tells the agent to read the directory's
+`AGENTS.md` itself — for Codex, that one sentence is the whole of tier 2.
+
+**Codex stops reading project docs at 32 KiB** (`project_doc_max_bytes`), counted across the root
+`AGENTS.md` and every nested one on the path, and cuts the rest off with no error. `guard` fails a
+root `AGENTS.md` over 24 KiB, leaving room for the nested ones. Next appends its own block to the
+root guide and `next dev` re-adds it, so the root is the one that grows.
+
+The mirror is a symlink where the platform allows one, so an edit propagates with no action at all
 and drift is impossible rather than managed. Where symlinks are refused, `sync` writes a verified
 copy and the guard compares every file by hash.
 
 ```sh
-npm run sync:agents    # mirrors, shims, the Cursor rule, orphan pruning, the playbook table
+npm run sync:agents    # the .claude/skills mirror, the CLAUDE.md shims, orphan pruning
 ```
 
-An agent is "in use" if its marker directory exists — `.claude/`, `.cursor/`, `.gemini/`. There is
-no config file, because the filesystem already knows, and the two agents needing nothing have no
-marker to check. **Edit the canonical file, never a mirror**; `sync:agents` overwrites mirrors, so
-an edit in the wrong place is discarded.
-
-The playbook table in `AGENTS.md` is generated from each skill's `description:` between its
-`<!-- playbooks:start -->` markers, for reading by a person and by any agent with no command
-system at all.
+**Edit the canonical file, never the mirror**; `sync:agents` overwrites it, so an edit in the wrong
+place is discarded.
 
 **Frontmatter is held to an allowlist** — `name`, `description`, `argument-hint`, `allowed-tools`,
-`model`, `disable-model-invocation`, `license`, `version`. A key borrowed from a *rules* file
-(`paths`, `globs`, `alwaysApply`) is not ignored by the agents that do not know it: Claude Code
-drops the whole skill, with no error anywhere, so the playbook goes missing from one agent and
-nothing says so. `sync:agents` will not repair this one — it cannot guess what you meant, and
-claiming "in sync" over it would be a silent success.
+`model`, `disable-model-invocation`. A key borrowed from a *rules* file (`paths`, `globs`,
+`alwaysApply`) is not ignored: Claude Code drops the whole skill, with no error anywhere, so the
+playbook goes missing from one agent and nothing says so. `sync:agents` will not repair this one —
+it cannot guess what you meant, and claiming "in sync" over it would be a silent success.
 
-`name` and `description` are the only two every one of the five requires; everything else on that
-list is honoured by some and ignored by others. opencode is the narrowest — it recognises `name`,
-`description`, `license`, `compatibility` and `metadata`, and ignores the rest rather than
-dropping the skill. So **keep the body carrying the instruction, never the frontmatter**: a
-playbook that only works when `allowed-tools` is respected is a playbook that half your agents run
-differently.
+`name` and `description` are the only two both agents read; the rest are Claude Code's, and Codex
+ignores them. So **keep the body carrying the instruction, never the frontmatter**: a playbook that
+only works when `allowed-tools` or `disable-model-invocation` is respected is one Codex runs
+differently. `new-project` is the example — its first line checks it is in the template, because
+Codex will not honour the flag that keeps Claude Code from invoking it.
+
+`.claude/settings.json` allows the framework's own read-only and gate commands — `rule`, `guard`,
+`verify` — without a prompt. The lookup protocol runs `rule` constantly, and each prompt is a
+turn. It is shared configuration, not generated: add to it freely.
 
 **The platform is not the operator's problem.** Windows, macOS and Linux are all first-class, and
 CI runs the whole suite plus a real scaffold on each — they fail differently, so a green result on
